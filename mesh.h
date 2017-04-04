@@ -6,7 +6,7 @@
 #include <iostream>
 
 #include "array.h"
-
+#include <vector>
 /** Singular point in 3D */
 class Point {
 public:
