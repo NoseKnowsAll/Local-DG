@@ -1,4 +1,5 @@
-CC = g++
+CC = icpc
+#g++
 
 CFLAGS  = -O3 -std=c++11
 LFLAGS  = -O3 -std=c++11

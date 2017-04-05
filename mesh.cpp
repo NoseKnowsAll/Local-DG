@@ -151,7 +151,7 @@ inline bool operator!=(const Element& lhs, const Element& rhs) {
 
 
 /** Mesh Functionality */
-Mesh::Mesh() : Mesh{5,5,5} {}
+Mesh::Mesh() : Mesh{10,10,10} {}
 
 Mesh::Mesh(int nx, int ny, int nz) : Mesh{nx, ny, nz, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}} {}
 
@@ -178,9 +178,9 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
       double currY = iy*(topRight.y-botLeft.y)/ny + botLeft.y;
       for (int ix = 0; ix <= nx; ++ix) {
 	double currX = ix*(topRight.x-botLeft.x)/nx + botLeft.x;
-	vertices(1, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currX;
-	vertices(2, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currY;
-	vertices(3, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currZ;
+	vertices(0, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currX;
+	vertices(1, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currY;
+	vertices(2, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currZ;
       }
     }
   }
@@ -211,12 +211,11 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
     }
   }
   
-  std::cout << "about to allocate problem arrays..." << std::endl;
   // Initialize element-to-face arrays
   eToE.realloc(N_FACES, nElements);
   normals.realloc(DIM, N_FACES, nElements);
-  //eToF.realloc(order*order, N_FACES, nElements);
   std::cout << "successful allocation!" << std::endl;
+  //eToF.realloc(order*order, N_FACES, nElements);
   
   // Modulo enforces periodic boundary conditions
   for (int iz = 0; iz < nz; ++iz) {
