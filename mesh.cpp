@@ -187,7 +187,6 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
   
   // Initialize elements-to-vertices array
   eToV.realloc(N_VERTICES, nElements);
-  
   for (int iz = 0; iz < nz; ++iz) {
     int zOff1 = (iz  )*(nx+1)*(ny+1);
     int zOff2 = (iz+1)*(nx+1)*(ny+1);
@@ -238,7 +237,7 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
 	eToE(3, eIndex) = ix0+iyP+iz0;
 	eToE(4, eIndex) = ix0+iy0+izM;
 	eToE(5, eIndex) = ix0+iy0+izP;
-
+	
 	// Uses the fact that normals is filled with 0s
 	normals(0, 0, eIndex) = -1.0;
 	normals(0, 1, eIndex) = 1.0;

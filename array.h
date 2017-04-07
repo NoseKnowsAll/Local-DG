@@ -2,7 +2,7 @@
 #define __ARRAY
 
 #include <algorithm>
-// #include <initializer_list>
+#include <iostream>
 #include <stdexcept>
 #include <functional>
 #include <numeric>
@@ -312,8 +312,7 @@ template <typename T> inline T prod(array<T> const& a)
 template <typename T> inline T norm(array<T> const& a)
 { return std::sqrt(std::inner_product((T const*)a, (T const*)a+a.size(), (T const*)a, T(0))); }
 
-template <typename T> inline T infnorm(array<T> const& a)
-{
+template <typename T> inline T infnorm(array<T> const& a) {
   T nrm=0.0;
   for (dgSize i=0; i<a.size(); i++) {
     T absa=std::abs(a[i]);
@@ -323,12 +322,20 @@ template <typename T> inline T infnorm(array<T> const& a)
   return nrm;
 }
 
-template <typename T> inline bool anynan(array<T> const& a)
-{
+template <typename T> inline bool anynan(array<T> const& a) {
   for (dgSize i=0; i<a.size(); i++)
     if (std::isnan(a[i]))
       return true;
   return false;
+}
+
+template <typename T>
+inline std::ostream& operator<<(std::ostream& out, const array<T>& a) {
+  for (dgSize i = 0; i < a.size()-1; ++i) {
+    out << a[i] << "\n";
+  }
+  out << a[a.size()-1];
+  return out;
 }
 
 typedef array<double> darray;
