@@ -11,17 +11,25 @@ int main(int argc, char *argv[]) {
   Mesh test{};
   std::cout << test << std::endl;
   
-  darray x, w;
+  // TODO: debugging
   int p = 8;
-  int n = gaussQuad(p, x, w);
-  std::cout << "quadrature points = " << x << std::endl;
-  std::cout << "quadrature weights = " << w << std::endl;
   
-  darray cheby = chebyshev(p);
-  std::cout << "chebyshev points = " << cheby << std::endl;
+  darray x3D, w3D;
+  int n = gaussQuad3D(p, x3D, w3D);
+  //std::cout << "3d points  = " << x3D << std::endl;
+  //std::cout << "3d weights = " << w3D << std::endl;
+  
+  darray cheby3D = chebyshev3D(4);
+  std::cout << "chebyshev points = " << cheby3D << std::endl;
+  
+  for (int j = 0; j < 5*5*5; ++j) {
+    std::cout << "cheby[" << j << "] = {" 
+	      << cheby3D(0,j) << ", " << cheby3D(1,j) << ", " << cheby3D(2,j) << "}" << std::endl;
+  }
+  
   return 0;
   
-  /** Tests Lapacke for solving example problem */
+  /** Tests Lapack(e) to ensure it can solve example */
   p = 4;
   
   // Initialize V to be specific vandermonde matrix

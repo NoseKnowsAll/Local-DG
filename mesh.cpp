@@ -109,10 +109,8 @@ Element& Element::operator=(const Element& elem) {
 /** After order and corners have been initialized, computes locations of dofs */
 void Element::initDoFs() {
   dofs.resize((order+1)*(order+1));
-  // TODO: figure out where distribution of points goes
   // Could use Gauss-Legendre-Lobatto zeros,
   // Radau zeros, or Gauss-Legendre zeros
-  // They only need to be computed once, and then mapped to each element. Is there a clean way to do so?
   std::cerr << "ERROR: dofs not initialized yet!" << std::endl;
 }
 
@@ -181,9 +179,10 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
       double currY = iy*(topRight.y-botLeft.y)/ny + botLeft.y;
       for (int ix = 0; ix <= nx; ++ix) {
 	double currX = ix*(topRight.x-botLeft.x)/nx + botLeft.x;
-	vertices(0, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currX;
-	vertices(1, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currY;
-	vertices(2, ix+iy*(nx+1)+iz*(nx+1)*(ny+1)) = currZ;
+	int vID = ix+iy*(nx+1)+iz*(nx+1)*(ny+1);
+	vertices(0, vID) = currX;
+	vertices(1, vID) = currY;
+	vertices(2, vID) = currZ;
       }
     }
   }
@@ -249,7 +248,7 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
 	eToF(4, eIndex) = 5;
 	eToF(5, eIndex) = 4;
 	
-	// Uses the fact that normals is initialized with 0s
+	// Note that normals is already filled with 0s
 	normals(0, 0, eIndex) = -1.0;
 	normals(0, 1, eIndex) = 1.0;
 	normals(1, 2, eIndex) = -1.0;
@@ -306,14 +305,18 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   
   order = _order;
   nNodes = chebyNodes.size(1);
-  globalCoords.realloc(DIM, nNodes, nElements);
-  // Assumes that nNodes = (order+1)^3 and each face is a square
-  nFNodes = (order+1)*(order+1);
   
+  // Scales and translates Chebyshev nodes into each element
+  globalCoords.realloc(DIM, nNodes, nElements);
   for (int k = 0; k < nElements; ++k) {
     darray botLeft{vertices(0, eToV(0, k)), DIM};
     darray topRight{vertices(0, eToV(7, k)), DIM};
     darray diff{topRight - botLeft};
+    
+    // TODO: confirm diff is correct
+    std::cout << "botLeft = " << botLeft << std::endl;
+    std::cout << "topRight = " << topRight << std::endl;
+    std::cout << "difference = " << diff << std::endl;
     
     for (int iN = 0; iN < nNodes; ++iN) {
       for (int j = 0; j < DIM; ++j) {
@@ -324,7 +327,85 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
     }
   }
   
-  // TODO: initialize efToN now that we have nodes
+  // TODO: Confirm efToN is correct
+  // Assumes that nNodes = (order+1)^3 and each face is a square
+  efToN.realloc(order+1,order+1, N_FACES, nElements);
+  for (int k = 0; k < nElements; ++k) {
+    
+    int xOff;
+    int yOff;
+    int zOff;
+    
+    // -x direction face
+    xOff = 0;
+    for (int iz = 0; iz <= order; ++iz) {
+      zOff = iz*(order+1)*(order+1);
+      for (int iy = 0; iy <= order; ++iy) {
+	yOff = iy*(order+1);
+	efToN(iy,iz, 0, k) = xOff+yOff+zOff;
+      }
+    }
+    
+    // +x direction face
+    xOff = order;
+    for (int iz = 0; iz <= order; ++iz) {
+      zOff = iz*(order+1)*(order+1);
+      for (int iy = 0; iy <= order; ++iy) {
+	yOff = iy*(order+1);
+	efToN(iy,iz, 1, k) = xOff+yOff+zOff;
+      }
+    }
+    
+    // -y direction face
+    yOff = 0;
+    for (int iz = 0; iz <= order; ++iz) {
+      zOff = iz*(order+1)*(order+1);
+      for (int ix = 0; ix <= order; ++ix) {
+	xOff = ix;
+	efToN(ix,iz, 2, k) = xOff+yOff+zOff;
+      }
+    }
+    
+    // +y direction face
+    yOff = order*(order+1);
+    for (int iz = 0; iz <= order; ++iz) {
+      zOff = iz*(order+1)*(order+1);
+      for (int ix = 0; ix <= order; ++ix) {
+	xOff = ix;
+	efToN(ix,iz, 3, k) = xOff+yOff+zOff;
+      }
+    }
+    
+    // -z direction face
+    zOff = 0;
+    for (int iy = 0; iy <= order; ++iy) {
+      yOff = iy*(order+1);
+      for (int ix = 0; ix <= order; ++ix) {
+	xOff = ix;
+	efToN(ix,iy, 4, k) = xOff+yOff+zOff;
+      }
+    }
+    
+    // +z direction face
+    zOff = order*(order+1)*(order+1);
+    for (int iy = 0; iy <= order; ++iy) {
+      yOff = iy*(order+1);
+      for (int ix = 0; ix <= order; ++ix) {
+	xOff = ix;
+	efToN(ix,iy, 5, k) = xOff+yOff+zOff;
+      }
+    }
+    
+  }
+  
+  // Re-organize face nodes so they are accessible by one index
+  nFNodes = (order+1)*(order+1);
+  efToN.resize(nFNodes, N_FACES, nElements);
+
+  // For fluxes, we care about soln on nodes at face and on neighbor's nodes at face
+  // For every element k, face i, face node iFN:
+  // My node @: soln(efToN(iFN, i, k), :, k)
+  // Neighbor's node @: soln(efToN(iFN, eToF(i,k), eToE(i,k)), :, eToE(i,k))
   
 }
 
