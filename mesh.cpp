@@ -159,15 +159,18 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& botLeft, const Point& topRight) 
 
 /** Main constructor */
 Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point& topRight) :
-  coords{},
+  globalCoords{},
   nElements{nx*ny*nz},
   nVertices{(nx+1)*(ny+1)*(nz+1)},
   order{_order},
+  nNodes{},
+  nFNodes{},
   vertices{},
   eToV{},
   eToE{},
   normals{},
-  eToF{}
+  eToF{},
+  efToN{}
 {
   
   // Initialize vertices
@@ -213,8 +216,7 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
   // Initialize element-to-face arrays
   eToE.realloc(N_FACES, nElements);
   normals.realloc(DIM, N_FACES, nElements);
-  std::cout << "successful allocation!" << std::endl;
-  //eToF.realloc(order*order, N_FACES, nElements);
+  eToF.realloc(N_FACES, nElements);
   
   // Modulo enforces periodic boundary conditions
   for (int iz = 0; iz < nz; ++iz) {
@@ -229,8 +231,9 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
 	int ixM = (ix+nx-1)%nx;
 	int ixP = (ix+nx+1)%nx;
 	int ix0 = ix;
-	int eIndex = ix + iy*nx + iz*nx*ny;
+	int eIndex = ix + iy0 + iz0;
 	
+	// Neighbor elements in -x,+x,-y,+y,-z,+z directions stored in faces
 	eToE(0, eIndex) = ixM+iy0+iz0;
 	eToE(1, eIndex) = ixP+iy0+iz0;
 	eToE(2, eIndex) = ix0+iyM+iz0;
@@ -238,7 +241,15 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
 	eToE(4, eIndex) = ix0+iy0+izM;
 	eToE(5, eIndex) = ix0+iy0+izP;
 	
-	// Uses the fact that normals is filled with 0s
+	// Face ID of this element's -x face will be neighbor's +x face (same for all dimensions)
+	eToF(0, eIndex) = 1;
+	eToF(1, eIndex) = 0;
+	eToF(2, eIndex) = 3;
+	eToF(3, eIndex) = 2;
+	eToF(4, eIndex) = 5;
+	eToF(5, eIndex) = 4;
+	
+	// Uses the fact that normals is initialized with 0s
 	normals(0, 0, eIndex) = -1.0;
 	normals(0, 1, eIndex) = 1.0;
 	normals(1, 2, eIndex) = -1.0;
@@ -249,24 +260,8 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
     }
   }
   
-  /* TODO: debugging
-  std::cout << "initialized " << nElements << " elements:" << std::endl;
-  for (int i = 0; i < nElements; ++i) {
-    std::cout << "element " << i << ": " << std::endl;
-    for (int j = 0; j < N_VERTICES; ++j) {
-      std::cout << eToV(j,i) << ", ";
-    }
-    std::cout << std::endl << " connected to elements ";
-    for (int j = 0; j < N_FACES; ++j) {
-      std::cout << eToE(j, i) << ", ";
-    }
-    std::cout << std::endl;
-  }
-  */
-  
   
   /* Object oriented way of initializing vertices
-  
   for (int iz = 0; iz < nz; ++iz) {
     double botZ = (iz  )*(topRight.z-botLeft.z)/nz + botLeft.z;
     double topZ = (iz+1)*(topRight.z-botLeft.z)/nz + botLeft.z;
@@ -292,21 +287,49 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
 
 /** Copy constructor */
 Mesh::Mesh(const Mesh& other) :
-  coords{other.coords},
+  globalCoords{other.globalCoords},
   nElements{other.nElements},
   nVertices{other.nVertices},
   order{other.order},
+  nNodes{other.nNodes},
+  nFNodes{other.nFNodes},
   vertices{other.vertices},
   eToV{other.eToV},
   eToE{other.eToE},
   normals{other.normals},
-  eToF{other.eToF}
+  eToF{other.eToF},
+  efToN{other.efToN}
 { }
+
+/** Initialize global nodes from solver's Chebyshev nodes */
+void Mesh::setupNodes(const darray& chebyNodes, int _order) {
+  
+  order = _order;
+  nNodes = chebyNodes.size(1);
+  globalCoords.realloc(DIM, nNodes, nElements);
+  // Assumes that nNodes = (order+1)^3 and each face is a square
+  nFNodes = (order+1)*(order+1);
+  
+  for (int k = 0; k < nElements; ++k) {
+    darray botLeft{vertices(0, eToV(0, k)), DIM};
+    darray topRight{vertices(0, eToV(7, k)), DIM};
+    darray diff{topRight - botLeft};
+    
+    for (int iN = 0; iN < nNodes; ++iN) {
+      for (int j = 0; j < DIM; ++j) {
+	// amount in [0,1] to scale jth dimension
+	double scale = .5*(chebyNodes(j,iN)+1);
+	globalCoords(j,iN,k) = botLeft(j)+scale*diff(j);
+      }
+    }
+  }
+  
+  // TODO: initialize efToN now that we have nodes
+  
+}
 
 std::ostream& operator<<(std::ostream& out, const Mesh& mesh) {
   out << mesh.nVertices << " vertices connected with " << mesh.nElements << " elements." << std::endl;
   return out;
 }
-
-
 

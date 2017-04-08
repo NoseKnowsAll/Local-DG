@@ -78,10 +78,18 @@ inline bool operator!=(const Element& lhs, const Element& rhs);
 class Mesh {
 public:
   
-  //std::vector<Element> elements;
-  /** Holds all 3D coordinates of each element's DoFs */
-  darray coords;
+  ///////////////////////////////////////
+  // Initialized after solver is created
+  ///////////////////////////////////////
+  /**
+     True coordinates of chebyshev nodes for each element:
+     For every element k, node i,
+     globalCoords(:, i,k) = 3D location of node i
+  */
+  darray globalCoords;
+  
   /** Holds all 3D coordinates of each element's vertices */
+  // TODO: should we index into globalCoords? Or copy data for caching purposes?
   //darray faceCoords;
   
   /** Dimension of space we are modeling */ 
@@ -98,23 +106,63 @@ public:
   Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point& topRight);
   Mesh(const Mesh& other);
   
+  void setupNodes(const darray& chebyNodes, int _order);
+  
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
 private:
-  int nElements;
-  int nVertices;
-  int order;
   
-  /** Holds all of the 3D vertices that form corners of elements */
+  /** Global number of elements */
+  int nElements;
+  /** Global number of vertices */
+  int nVertices;
+  
+  ///////////////////////////////////////
+  // Initialized after solver is created
+  ///////////////////////////////////////
+  /** Order of DG method */
+  int order;
+  /** Local number of DG nodes per element */
+  int nNodes;
+  /** Local number of DG nodes per face of an element */
+  int nFNodes;
+  
+  /** Global vector of 3D vertices that form corners of elements */
   darray vertices;
-  /** element-to-vertex mapping */
+  
+  /**
+     element-to-vertex mapping:
+     For every element k, vertex i
+     eToV(i, k) = global vertex index of local vertex i
+   */
   iarray eToV;
-  /** element-to-element neighbor map */
+  
+  /**
+     element-to-element neighbor map:
+     For every element k, face i
+     eToE(i, k) = element number of neighbor in ith direction
+     3D: -x,+x,-y,+y,-z,+z directions
+  */
   iarray eToE;
-  /** normals at each face of each element */
+  /**
+     normals at each face of each element:
+     For every element k, face i
+     normals(:,i,k) = outward normal vector of face i
+  */
   darray normals;
-  /** element-to-faces neighbor map */
+  /**
+     element-to-faces neighbor map:
+     For every element k, face i, 
+     eToF(i, k) = face number on neighbor's face array
+  */
   iarray eToF;
+  
+  /**
+     element-face-to-node map:
+     For every element k, face i, 
+     efToN(:, i,k) = local node IDs of nodes on face i
+  */
+  iarray efToN;
   
 };
 
