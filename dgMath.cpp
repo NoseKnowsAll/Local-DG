@@ -99,3 +99,191 @@ int gaussQuad3D(int p, darray& x3D, darray& w3D) {
   //w3D.reshape(totalPts);
   return totalPts;
 }
+
+/**
+   Evaluates the 1D Legendre polynomials of order 0:p on [-1,1]
+   at the points specified in x
+*/
+darray legendre(int p, const darray& x) {
+  
+  int nx = x.size(0);
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    return darray{nx, 1};
+  }
+  
+  darray polys{nx, p+1};
+  
+  // Initialize p_0(x) = 1
+  for (int i = 0; i < nx; ++i) {
+    polys(i, 0) = 1.0;
+  }
+  if (p == 0)
+    return polys;
+  // Initialize p_1(x) = x
+  for (int i = 0; i < nx; ++i) {
+    polys(i, 1) = x(i);
+  }
+  if (p == 1)
+    return polys;
+  
+  // Three-term recurrence relationship
+  for (int ip = 0; ip < p-1; ++ip) {
+    for (int i = 0; i < nx; ++i) {
+      polys(i,ip+2) = ((2*ip+3)*x(i)*polys(i,ip+1) - (ip+1)*polys(i,ip)) / (ip+2);
+    }
+  }
+  return polys;
+  
+}
+
+/**
+   Evaluates the 1D derivative of Legendre polynomials of order 0:p 
+   on [-1,1] at the points specified in x
+*/
+darray dlegendre(int p, const darray& x) {
+  
+  int nx = x.size(0);
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    return darray{nx, 1};
+  }
+  
+  darray polys {nx, p+1};
+  darray dpolys{nx, p+1};
+  
+  // Initialize dp_0(x) = 0
+  for (int i = 0; i < nx; ++i) {
+    polys (i, 0) = 1.0;
+    dpolys(i, 0) = 0.0;
+  }
+  if (p == 0)
+    return dpolys;
+  // Initialize dp_1(x) = 1
+  for (int i = 0; i < nx; ++i) {
+    polys (i, 1) = x(i);
+    dpolys(i, 1) = 1.0;
+  }
+  if (p == 1)
+    return dpolys;
+  
+  // Three-term recurrence relationship
+  for (int ip = 0; ip < p-1; ++ip) {
+    for (int i = 0; i < nx; ++i) {
+      polys(i,ip+2) = ((2*ip+3)*x(i)*polys(i,ip+1) - (ip+1)*polys(i,ip)) / (ip+2);
+      dpolys(i,ip+2) = ((2*ip+3)*(x(i)*dpolys(i,ip+1) + polys(i,ip+1))
+			- (ip+1)*dpolys(i,ip)) / (ip+2);
+    }
+  }
+  return dpolys;
+  
+}
+
+/**
+   Evaluates the 3D Legendre polynomials of order 0:p in each dimension on the 
+   reference element [-1,1]^3 at the points specified in x3D
+*/
+darray legendre3D(int p, const darray& x3D) {
+  
+  int nx = x3D.size(1);
+  int ny = x3D.size(2);
+  int nz = x3D.size(3);
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    return darray{nx,ny,nz, 1};
+  }
+  
+  // Initialize 1D arrays from 3D input
+  darray x{nx};
+  darray y{ny};
+  darray z{nz};
+  for (int ix = 0; ix < nx; ++ix) {
+    x(ix) = x3D(0, ix, 0, 0);
+  }
+  for (int iy = 0; iy < ny; ++iy) {
+    y(iy) = x3D(1, 0, iy, 0);
+  }
+  for (int iz = 0; iz < nz; ++iz) {
+    z(iz) = x3D(2, 0, 0, iz);
+  }
+  
+  // Compute 1D Legendre polynomials
+  darray lx = legendre(p, x);
+  darray ly = legendre(p, y);
+  darray lz = legendre(p, z);
+  
+  // Combine 1D Legendre polynomials into 3D polynomial
+  darray l3D{nx, ny, nz, p+1, p+1, p+1};
+  
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int iz = 0; iz < nz; ++iz) {
+	  for (int iy = 0; iy < ny; ++iy) {
+	    for (int ix = 0; ix < nx; ++ix) {
+	      l3D(ix,iy,iz,ipx,ipy,ipz) = lx(ix,ipx)*ly(iy,ipy)*lz(iz,ipz);
+	    }
+	  }
+	}
+      }
+    }
+  }
+  
+  return l3D;
+  
+}
+
+/**
+   Evaluates the 3D derivatives of Legendre polynomials of order 0:p in each 
+   dimension on the reference element [-1,1]^3 at the points specified in x3D
+*/
+darray dlegendre3D(int p, const darray& x3D) {
+  
+  int nx = x3D.size(1);
+  int ny = x3D.size(2);
+  int nz = x3D.size(3);
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    return darray{nx,ny,nz, 1};
+  }
+  
+  // Initialize 1D arrays from 3D input
+  darray x{nx};
+  darray y{ny};
+  darray z{nz};
+  for (int ix = 0; ix < nx; ++ix) {
+    x(ix) = x3D(0, ix, 0, 0);
+  }
+  for (int iy = 0; iy < ny; ++iy) {
+    y(iy) = x3D(1, 0, iy, 0);
+  }
+  for (int iz = 0; iz < nz; ++iz) {
+    z(iz) = x3D(2, 0, 0, iz);
+  }
+  
+  // Compute 1D derivative of Legendre polynomials
+  // TODO: does this have to change into gradient?
+  darray dlx = dlegendre(p, x);
+  darray dly = dlegendre(p, y);
+  darray dlz = dlegendre(p, z);
+  
+  // Combine 1D Legendre polynomials into 3D polynomial
+  darray dl3D{nx, ny, nz, p+1, p+1, p+1};
+  
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int iz = 0; iz < nz; ++iz) {
+	  for (int iy = 0; iy < ny; ++iy) {
+	    for (int ix = 0; ix < nx; ++ix) {
+	      dl3D(ix,iy,iz,ipx,ipy,ipz) = dlx(ix,ipx)*dly(iy,ipy)*dlz(iz,ipz);
+	    }
+	  }
+	}
+      }
+    }
+  }
+  
+  return dl3D;
+  
+}

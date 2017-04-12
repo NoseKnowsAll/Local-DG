@@ -27,4 +27,28 @@ int gaussQuad(int p, darray& x, darray& w);
 */
 int gaussQuad3D(int p, darray& x3D, darray& w3D);
 
+/**
+   Evaluates the 1D Legendre polynomials of order 0:p on [-1,1]
+   at the points specified in x
+*/
+darray legendre(int p, const darray& x);
+
+/**
+   Evaluates the 1D derivative of Legendre polynomials of order 0:p 
+   on [-1,1] at the points specified in x
+*/
+darray dlegendre(int p, const darray& x);
+
+/**
+   Evaluates the 3D Legendre polynomials of order 0:p in each dimension on the 
+   reference element [-1,1]^3 at the points specified in x3D
+*/
+darray legendre3D(int p, const darray& x3D);
+
+/**
+   Evaluates the 3D derivatives of Legendre polynomials of order 0:p in each 
+   dimension on the reference element [-1,1]^3 at the points specified in x3D
+*/
+darray dlegendre3D(int p, const darray& x3D);
+
 #endif

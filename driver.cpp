@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
   std::cout << test << std::endl;
   
   // TODO: debugging
-  int p = 8;
+  int p = 4;
   
   darray x3D, w3D;
   int n = gaussQuad3D(p, x3D, w3D);
@@ -20,12 +20,33 @@ int main(int argc, char *argv[]) {
   //std::cout << "3d weights = " << w3D << std::endl;
   
   darray cheby3D = chebyshev3D(4);
-  std::cout << "chebyshev points = " << cheby3D << std::endl;
-  
+  /*
   for (int j = 0; j < 5*5*5; ++j) {
     std::cout << "cheby[" << j << "] = {" 
 	      << cheby3D(0,j) << ", " << cheby3D(1,j) << ", " << cheby3D(2,j) << "}" << std::endl;
   }
+  */
+  
+  darray cheby = chebyshev(p);
+  darray legend = legendre(p, cheby);
+  darray dlegend = dlegendre(p, cheby);
+  
+  /*
+  std::cout << std::endl << "legend = " << std::endl;
+  for (int i = 0; i < legend.size(1); ++i) {
+    for (int j = 0; j < legend.size(0); ++j) {
+      std::cout << legend(i,j) << ", ";
+    }
+    std::cout << std::endl;
+  }
+  std::cout << std::endl << "dlegend = " << std::endl;
+  for (int i = 0; i < dlegend.size(1); ++i) {
+    for (int j = 0; j < dlegend.size(0); ++j) {
+      std::cout << dlegend(i,j) << ", ";
+    }
+    std::cout << std::endl;
+  }
+  */
   
   return 0;
   

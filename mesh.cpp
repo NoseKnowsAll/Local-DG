@@ -329,83 +329,80 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   
   // TODO: Confirm efToN is correct
   // Assumes that nNodes = (order+1)^3 and each face is a square
-  efToN.realloc(order+1,order+1, N_FACES, nElements);
-  for (int k = 0; k < nElements; ++k) {
-    
-    int xOff;
-    int yOff;
-    int zOff;
-    
-    // -x direction face
-    xOff = 0;
-    for (int iz = 0; iz <= order; ++iz) {
-      zOff = iz*(order+1)*(order+1);
-      for (int iy = 0; iy <= order; ++iy) {
-	yOff = iy*(order+1);
-	efToN(iy,iz, 0, k) = xOff+yOff+zOff;
-      }
-    }
-    
-    // +x direction face
-    xOff = order;
-    for (int iz = 0; iz <= order; ++iz) {
-      zOff = iz*(order+1)*(order+1);
-      for (int iy = 0; iy <= order; ++iy) {
-	yOff = iy*(order+1);
-	efToN(iy,iz, 1, k) = xOff+yOff+zOff;
-      }
-    }
-    
-    // -y direction face
-    yOff = 0;
-    for (int iz = 0; iz <= order; ++iz) {
-      zOff = iz*(order+1)*(order+1);
-      for (int ix = 0; ix <= order; ++ix) {
-	xOff = ix;
-	efToN(ix,iz, 2, k) = xOff+yOff+zOff;
-      }
-    }
-    
-    // +y direction face
-    yOff = order*(order+1);
-    for (int iz = 0; iz <= order; ++iz) {
-      zOff = iz*(order+1)*(order+1);
-      for (int ix = 0; ix <= order; ++ix) {
-	xOff = ix;
-	efToN(ix,iz, 3, k) = xOff+yOff+zOff;
-      }
-    }
-    
-    // -z direction face
-    zOff = 0;
+  efToN.realloc(order+1,order+1, N_FACES);
+  
+  int xOff;
+  int yOff;
+  int zOff;
+  
+  // -x direction face
+  xOff = 0;
+  for (int iz = 0; iz <= order; ++iz) {
+    zOff = iz*(order+1)*(order+1);
     for (int iy = 0; iy <= order; ++iy) {
       yOff = iy*(order+1);
-      for (int ix = 0; ix <= order; ++ix) {
-	xOff = ix;
-	efToN(ix,iy, 4, k) = xOff+yOff+zOff;
-      }
+      efToN(iy,iz, 0) = xOff+yOff+zOff;
     }
-    
-    // +z direction face
-    zOff = order*(order+1)*(order+1);
+  }
+  
+  // +x direction face
+  xOff = order;
+  for (int iz = 0; iz <= order; ++iz) {
+    zOff = iz*(order+1)*(order+1);
     for (int iy = 0; iy <= order; ++iy) {
       yOff = iy*(order+1);
-      for (int ix = 0; ix <= order; ++ix) {
-	xOff = ix;
-	efToN(ix,iy, 5, k) = xOff+yOff+zOff;
-      }
+      efToN(iy,iz, 1) = xOff+yOff+zOff;
     }
-    
+  }
+  
+  // -y direction face
+  yOff = 0;
+  for (int iz = 0; iz <= order; ++iz) {
+    zOff = iz*(order+1)*(order+1);
+    for (int ix = 0; ix <= order; ++ix) {
+      xOff = ix;
+      efToN(ix,iz, 2) = xOff+yOff+zOff;
+    }
+  }
+  
+  // +y direction face
+  yOff = order*(order+1);
+  for (int iz = 0; iz <= order; ++iz) {
+    zOff = iz*(order+1)*(order+1);
+    for (int ix = 0; ix <= order; ++ix) {
+      xOff = ix;
+      efToN(ix,iz, 3) = xOff+yOff+zOff;
+    }
+  }
+  
+  // -z direction face
+  zOff = 0;
+  for (int iy = 0; iy <= order; ++iy) {
+    yOff = iy*(order+1);
+    for (int ix = 0; ix <= order; ++ix) {
+      xOff = ix;
+      efToN(ix,iy, 4) = xOff+yOff+zOff;
+    }
+  }
+  
+  // +z direction face
+  zOff = order*(order+1)*(order+1);
+  for (int iy = 0; iy <= order; ++iy) {
+    yOff = iy*(order+1);
+    for (int ix = 0; ix <= order; ++ix) {
+      xOff = ix;
+      efToN(ix,iy, 5) = xOff+yOff+zOff;
+    }
   }
   
   // Re-organize face nodes so they are accessible by one index
   nFNodes = (order+1)*(order+1);
-  efToN.resize(nFNodes, N_FACES, nElements);
-
+  efToN.resize(nFNodes, N_FACES);
+  
   // For fluxes, we care about soln on nodes at face and on neighbor's nodes at face
   // For every element k, face i, face node iFN:
-  // My node @: soln(efToN(iFN, i, k), :, k)
-  // Neighbor's node @: soln(efToN(iFN, eToF(i,k), eToE(i,k)), :, eToE(i,k))
+  // My node @: soln(efToN(iFN, i), :, k)
+  // Neighbor's node @: soln(efToN(iFN, eToF(i,k)), :, eToE(i,k))
   
 }
 

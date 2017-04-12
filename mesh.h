@@ -159,8 +159,8 @@ private:
   
   /**
      element-face-to-node map:
-     For every element k, face i, 
-     efToN(:, i,k) = local node IDs of nodes on face i
+     For every face i (same across all elements), 
+     efToN(:, i) = local node IDs of nodes on face i
   */
   iarray efToN;
   
