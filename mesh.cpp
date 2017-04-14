@@ -153,13 +153,18 @@ Mesh::Mesh() : Mesh{10,10,10} {}
 
 Mesh::Mesh(int nx, int ny, int nz) : Mesh{nx, ny, nz, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}} {}
 
-Mesh::Mesh(int nx, int ny, int nz, const Point& botLeft, const Point& topRight) : Mesh{1, nx, ny, nz, botLeft, topRight} {}
+Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) : Mesh{1, nx, ny, nz, _botLeft, _topRight} {}
 
 /** Main constructor */
-Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point& topRight) :
+Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) :
   globalCoords{},
   nElements{nx*ny*nz},
   nVertices{(nx+1)*(ny+1)*(nz+1)},
+  botLeft{_botLeft},
+  topRight{_topRight},
+  minDX{},
+  minDY{},
+  minDZ{},
   order{_order},
   nNodes{},
   nFNodes{},
@@ -186,6 +191,10 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
       }
     }
   }
+  minDX = (topRight.x - botLeft.x)/nx;
+  minDY = (topRight.y - botLeft.y)/ny;
+  minDZ = (topRight.z - botLeft.z)/nz;
+  
   
   // Initialize elements-to-vertices array
   eToV.realloc(N_VERTICES, nElements);
@@ -288,6 +297,11 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point
 Mesh::Mesh(const Mesh& other) :
   globalCoords{other.globalCoords},
   nElements{other.nElements},
+  botLeft{other.botLeft},
+  topRight{other.topRight},
+  minDX{other.minDX},
+  minDY{other.minDY},
+  minDZ{other.minDZ},
   nVertices{other.nVertices},
   order{other.order},
   nNodes{other.nNodes},

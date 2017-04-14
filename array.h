@@ -8,7 +8,7 @@
 #include <numeric>
 #include <cmath>
 
-#define ARRAY_MAX_NDIM 6
+#define ARRAY_MAX_NDIM 7
 typedef int dgSize;
 
 template <typename T> class array {
@@ -59,6 +59,8 @@ template <typename T> class array {
     { resize(s0, s1, s2, s3, s4); allocmem(); }
   explicit array(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5)
     { resize(s0, s1, s2, s3, s4, s5); allocmem(); }
+  explicit array(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6)
+  { resize(s0, s1, s2, s3, s4, s5, s6); allocmem(); }
   // template <typename idxType>
   // explicit array(std::initializer_list<idxType> s)
   //   { resize(s); allocmem(); }
@@ -79,6 +81,8 @@ template <typename T> class array {
     { resize(s0, s1, s2, s3, s4); }
   explicit array(T *data, dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5) : _data(data), _alloc(false)
     { resize(s0, s1, s2, s3, s4, s5); }
+  explicit array(T *data, dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6) : _data(data), _alloc(false)
+    { resize(s0, s1, s2, s3, s4, s5, s6); }
   // template <typename idxType>
   // explicit array(T* data, std::initializer_list<idxType> s) : _data(data), _alloc(false)
   //   { resize(s); }
@@ -121,6 +125,8 @@ template <typename T> class array {
     { dgSize dims[5] = {s0, s1, s2, s3, s4}; resize(5, dims); }
   void resize(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5)
     { dgSize dims[6] = {s0, s1, s2, s3, s4, s5}; resize(6, dims); }
+  void resize(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6)
+    { dgSize dims[7] = {s0, s1, s2, s3, s4, s5, s6}; resize(7, dims); }
   // template <typename idxType>
   // void resize(std::initializer_list<idxType> s) {
   //   resize(s.size(), s.begin());
@@ -148,6 +154,8 @@ template <typename T> class array {
     { deallocmem(); _data = data; resize(s0, s1, s2, s3, s4); }
   void setreference(T *data, dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5)
     { deallocmem(); _data = data; resize(s0, s1, s2, s3, s4, s5); }
+  void setreference(T *data, dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6)
+    { deallocmem(); _data = data; resize(s0, s1, s2, s3, s4, s5, s6); }
   // template <typename idxType>
   // void setreference(T* data, std::initializer_list<idxType> s)
   //   { deallocmem(); _data = data; resize(s); }
@@ -171,6 +179,8 @@ template <typename T> class array {
     { deallocmem(); resize(s0, s1, s2, s3, s4); allocmem(); }
   void realloc(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5)
     { deallocmem(); resize(s0, s1, s2, s3, s4, s5); allocmem(); }
+  void realloc(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6)
+    { deallocmem(); resize(s0, s1, s2, s3, s4, s5, s6); allocmem(); }
   // void realloc(std::initializer_list<dgSize> s)
   //   { deallocmem(); resize(s); allocmem(); }
 
@@ -218,6 +228,8 @@ template <typename T> class array {
     { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4]; }
   T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5) const
     { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5]; }
+  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5, dgSize i6) const
+    { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6]; }
 
   // Implicit cast to the data.
   operator T*() const { return _data; }
@@ -282,6 +294,8 @@ template <typename T> class array {
     { return _ndim == 5 && _dims[0] == s0 && _dims[1] == s1 && _dims[2] == s2 && _dims[3] == s3 && _dims[4] == s4; }
   bool has_shape(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5) const
     { return _ndim == 6 && _dims[0] == s0 && _dims[1] == s1 && _dims[2] == s2 && _dims[3] == s3 && _dims[4] == s4 && _dims[5] == s5; }
+  bool has_shape(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6) const
+    { return _ndim == 7 && _dims[0] == s0 && _dims[1] == s1 && _dims[2] == s2 && _dims[3] == s3 && _dims[4] == s4 && _dims[5] == s5 && _dims[6] == s6; }
   template <typename S>
   bool has_shape_like(array<S> const& rhs) const
     { return has_shape(rhs.ndim(), rhs.dims()); }

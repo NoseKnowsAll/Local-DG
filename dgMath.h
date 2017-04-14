@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <mkl_lapacke.h>
+#include <mkl.h>
 
 #include "array.h"
 
@@ -50,5 +51,13 @@ darray legendre3D(int p, const darray& x3D);
    dimension on the reference element [-1,1]^3 at the points specified in x3D
 */
 darray dlegendre3D(int p, const darray& x3D);
+
+/**
+   Computes an interpolation matrix from a set of 3D points to another set of 3D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a cube.
+   Points interpolating onto can be of any size, but must be defined on that same cube.
+*/
+darray interpolationMatrix3D(const darray& xFrom, const darray& xTo);
 
 #endif

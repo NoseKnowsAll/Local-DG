@@ -4,8 +4,8 @@ CC = icpc
 CFLAGS  = -O3 -std=c++11 -mkl
 LFLAGS  = -O3 -std=c++11 -mkl
 DEFINES = #-Dvariables
-HEADERS = mesh.h dgMath.h array.h
-OBJS    = driver.o mesh.o dgMath.o
+HEADERS = solver.h mesh.h dgMath.h array.h
+OBJS    = driver.o solver.o mesh.o dgMath.o
 LIBS    = -I.
 
 TARGETS = driver

@@ -229,6 +229,7 @@ darray legendre3D(int p, const darray& x3D) {
     }
   }
   
+  l3D.resize(nx*ny*nz, p+1,p+1,p+1);
   return l3D;
   
 }
@@ -261,22 +262,54 @@ darray dlegendre3D(int p, const darray& x3D) {
     z(iz) = x3D(2, 0, 0, iz);
   }
   
-  // Compute 1D derivative of Legendre polynomials
-  // TODO: does this have to change into gradient?
+  // Compute 1D Legendre polynomials
+  darray lx = legendre(p, x);
+  darray ly = legendre(p, y);
+  darray lz = legendre(p, z);
+  // Compute 1D derivatives of Legendre polynomials
   darray dlx = dlegendre(p, x);
   darray dly = dlegendre(p, y);
   darray dlz = dlegendre(p, z);
   
   // Combine 1D Legendre polynomials into 3D polynomial
-  darray dl3D{nx, ny, nz, p+1, p+1, p+1};
+  darray dl3D{nx, ny, nz, p+1, p+1, p+1, 3};
   
+  // x
   for (int ipz = 0; ipz <= p; ++ipz) {
     for (int ipy = 0; ipy <= p; ++ipy) {
       for (int ipx = 0; ipx <= p; ++ipx) {
 	for (int iz = 0; iz < nz; ++iz) {
 	  for (int iy = 0; iy < ny; ++iy) {
 	    for (int ix = 0; ix < nx; ++ix) {
-	      dl3D(ix,iy,iz,ipx,ipy,ipz) = dlx(ix,ipx)*dly(iy,ipy)*dlz(iz,ipz);
+	      dl3D(ix,iy,iz,ipx,ipy,ipz,0) = dlx(ix,ipx)*ly(iy,ipy)*lz(iz,ipz);
+	    }
+	  }
+	}
+      }
+    }
+  }
+  // y
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int iz = 0; iz < nz; ++iz) {
+	  for (int iy = 0; iy < ny; ++iy) {
+	    for (int ix = 0; ix < nx; ++ix) {
+	      dl3D(ix,iy,iz,ipx,ipy,ipz,1) = lx(ix,ipx)*dly(iy,ipy)*lz(iz,ipz);
+	    }
+	  }
+	}
+      }
+    }
+  }
+  // z
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int iz = 0; iz < nz; ++iz) {
+	  for (int iy = 0; iy < ny; ++iy) {
+	    for (int ix = 0; ix < nx; ++ix) {
+	      dl3D(ix,iy,iz,ipx,ipy,ipz,2) = lx(ix,ipx)*ly(iy,ipy)*dlz(iz,ipz);
 	    }
 	  }
 	}
@@ -284,6 +317,47 @@ darray dlegendre3D(int p, const darray& x3D) {
     }
   }
   
+  dl3D.resize(nx*ny*nz, p+1,p+1,p+1, 3);
   return dl3D;
+  
+}
+
+/**
+   Computes an interpolation matrix from a set of 3D points to another set of 3D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a cube.
+   Points interpolating onto can be of any size, but must be defined on that same cube.
+*/
+darray interpolationMatrix3D(const darray& xFrom, const darray& xTo) {
+  
+  // Create nodal representation of the reference bases
+  int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
+  
+  int nFrom = xFrom.size(1)*xFrom.size(2)*xFrom.size(3);
+  darray lFrom = legendre3D(order, xFrom);
+  
+  darray coeffsPhi{order+1,order+1,order+1,order+1,order+1,order+1};
+  for (int ipz = 0; ipz <= order; ++ipz) {
+    for (int ipy = 0; ipy <= order; ++ipy) {
+      for (int ipx = 0; ipx <= order; ++ipx) {
+	coeffsPhi(ipx,ipy,ipz,ipx,ipy,ipz) = 1.0;
+      }
+    }
+  }
+  MKL_INT ipiv[nFrom];
+  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  
+  // Compute reference bases on the output points
+  int nTo   =   xTo.size(1)*  xTo.size(2)*  xTo.size(3);
+  darray lTo = legendre3D(order, xTo);
+  
+  // Construct interpolation matrix = lTo*coeffsPhi
+  darray INTERP{nTo, nFrom};
+  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+	      nTo, nFrom, nFrom, 1.0, lTo.data(), nTo, 
+	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
+  
+  return INTERP;
   
 }

@@ -5,14 +5,24 @@
 #include "array.h"
 #include "dgMath.h"
 #include "mesh.h"
+#include "solver.h"
 
-/** Main test function */
+/** Main driver function */
 int main(int argc, char *argv[]) {
-  Mesh test{};
-  std::cout << test << std::endl;
+  
+  Mesh mesh{};
+  std::cout << mesh << std::endl;
+  
+  int p = 4;
+  double tf = 2.0;
+  Solver dgSolver{p, tf, mesh};
+  
+  dgSolver.dgTimeStep();
+  
+  return 0;
   
   // TODO: debugging
-  int p = 4;
+  p = 4;
   
   darray x3D, w3D;
   int n = gaussQuad3D(p, x3D, w3D);

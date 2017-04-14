@@ -102,20 +102,30 @@ public:
   
   Mesh();
   Mesh(int nx, int ny, int nz);
-  Mesh(int nx, int ny, int nz, const Point& botLeft, const Point& topRight);
-  Mesh(int _order, int nx, int ny, int nz, const Point& botLeft, const Point& topRight);
+  Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
+  Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
   Mesh(const Mesh& other);
   
   void setupNodes(const darray& chebyNodes, int _order);
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
-private:
+  //private:
   
   /** Global number of elements */
   int nElements;
   /** Global number of vertices */
   int nVertices;
+  /** Global bottom left corner of domain */
+  Point botLeft;
+  /** Global bottom left corner of domain */
+  Point topRight;
+  /** Global minimum dx of one element */
+  double minDX;
+  /** Global minimum dy of one element */
+  double minDY;
+  /** Global minimum dz of one element */
+  double minDZ;
   
   ///////////////////////////////////////
   // Initialized after solver is created
@@ -126,6 +136,9 @@ private:
   int nNodes;
   /** Local number of DG nodes per face of an element */
   int nFNodes;
+  ///////////////////////////////////////
+  // End of variables initialized after solver is created
+  ///////////////////////////////////////
   
   /** Global vector of 3D vertices that form corners of elements */
   darray vertices;
