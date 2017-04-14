@@ -11,6 +11,23 @@ darray chebyshev(int p) {
   
 }
 
+/** Returns the Chebyshev points of order p in 2D on [-1,1]^2 */
+darray chebyshev2D(int p) {
+  
+  darray cheby = chebyshev(p);
+  
+  darray cheby2D{2, p+1,p+1};
+  for (int iy = 0; iy <= p; ++iy) {
+    for (int ix = 0; ix <= p; ++ix) {
+      cheby2D(0, ix,iy) = cheby(ix);
+      cheby2D(1, ix,iy) = cheby(iy);
+    }
+  }
+  
+  return cheby2D;
+  
+}
+
 /** Returns the Chebyshev points of order p in 3D on [-1,1]^3 */
 darray chebyshev3D(int p) {
   
@@ -64,6 +81,34 @@ int gaussQuad(int p, darray& x, darray& w) {
   }
   
   return n;
+}
+
+/**
+   Given an order p, computes the Gaussian quadrature points x2D 
+   and weights w2D on the domain [-1,1]^2. Returns the total
+   number of points to evaluate. 
+*/
+int gaussQuad2D(int p, darray& x2D, darray& w2D) {
+  
+  // Get 1D quadrature pts/weights
+  darray x1D, w1D;
+  int n = gaussQuad(p, x1D, w1D);
+  
+  x2D.realloc(2, n,n);
+  w2D.realloc(n,n);
+  
+  // Apply 1D quadrature to 2D cube
+  for (int iy = 0; iy < n; ++iy) {
+    for (int ix = 0; ix < n; ++ix) {
+      x2D(0, ix,iy) = x1D(ix);
+      x2D(1, ix,iy) = x1D(iy);
+      
+      w2D(ix,iy) = w1D(ix)*w1D(iy);
+    }
+  }
+  
+  int totalPts = n*n;
+  return totalPts;
 }
 
 /**
@@ -176,6 +221,110 @@ darray dlegendre(int p, const darray& x) {
     }
   }
   return dpolys;
+  
+}
+
+/**
+   Evaluates the 2D Legendre polynomials of order 0:p in each dimension on the 
+   reference element [-1,1]^2 at the points specified in x2D
+*/
+darray legendre2D(int p, const darray& x2D) {
+  
+  int nx = x2D.size(1);
+  int ny = x2D.size(2);
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    return darray{nx,ny, 1};
+  }
+  
+  // Initialize 1D arrays from 2D input
+  darray x{nx};
+  darray y{ny};
+  for (int ix = 0; ix < nx; ++ix) {
+    x(ix) = x2D(0, ix, 0);
+  }
+  for (int iy = 0; iy < ny; ++iy) {
+    y(iy) = x2D(1, 0, iy);
+  }
+  
+  // Compute 1D Legendre polynomials
+  darray lx = legendre(p, x);
+  darray ly = legendre(p, y);
+  
+  // Combine 1D Legendre polynomials into 2D polynomial
+  darray l2D{nx, ny, p+1, p+1};
+  
+  for (int ipy = 0; ipy <= p; ++ipy) {
+    for (int ipx = 0; ipx <= p; ++ipx) {
+      for (int iy = 0; iy < ny; ++iy) {
+	for (int ix = 0; ix < nx; ++ix) {
+	  l2D(ix,iy,ipx,ipy) = lx(ix,ipx)*ly(iy,ipy);
+	}
+      }
+    }
+  }
+  
+  l2D.resize(nx*ny, p+1,p+1);
+  return l2D;
+  
+}
+
+/**
+   Evaluates the 2D derivatives of Legendre polynomials of order 0:p in each 
+   dimension on the reference element [-1,1]^2 at the points specified in x2D
+*/
+darray dlegendre2D(int p, const darray& x2D) {
+  
+  int nx = x2D.size(1);
+  int ny = x2D.size(2);
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    return darray{nx,ny, 1};
+  }
+  
+  // Initialize 1D arrays from 2D input
+  darray x{nx};
+  darray y{ny};
+  for (int ix = 0; ix < nx; ++ix) {
+    x(ix) = x2D(0, ix, 0);
+  }
+  for (int iy = 0; iy < ny; ++iy) {
+    y(iy) = x2D(1, 0, iy);
+  }
+  
+  // Compute 1D Legendre polynomials
+  darray lx = legendre(p, x);
+  darray ly = legendre(p, y);
+  // Compute 1D derivatives of Legendre polynomials
+  darray dlx = dlegendre(p, x);
+  darray dly = dlegendre(p, y);
+  
+  // Combine 1D Legendre polynomials into 2D polynomial
+  darray dl2D{nx, ny, p+1, p+1, 2};
+  
+  // x
+  for (int ipy = 0; ipy <= p; ++ipy) {
+    for (int ipx = 0; ipx <= p; ++ipx) {
+      for (int iy = 0; iy < ny; ++iy) {
+	for (int ix = 0; ix < nx; ++ix) {
+	  dl2D(ix,iy,ipx,ipy,0) = dlx(ix,ipx)*ly(iy,ipy);
+	}
+      }
+    }
+  }
+  // y
+  for (int ipy = 0; ipy <= p; ++ipy) {
+    for (int ipx = 0; ipx <= p; ++ipx) {
+      for (int iy = 0; iy < ny; ++iy) {
+	for (int ix = 0; ix < nx; ++ix) {
+	  dl2D(ix,iy,ipx,ipy,1) = lx(ix,ipx)*dly(iy,ipy);
+	}
+      }
+    }
+  }
+  
+  dl2D.resize(nx*ny, p+1,p+1, 2);
+  return dl2D;
   
 }
 
@@ -319,6 +468,80 @@ darray dlegendre3D(int p, const darray& x3D) {
   
   dl3D.resize(nx*ny*nz, p+1,p+1,p+1, 3);
   return dl3D;
+  
+}
+
+/**
+   Computes an interpolation matrix from a set of 1D points to another set of 1D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define an interval.
+   Points interpolating onto can be of any size, but must be defined on that same interval.
+*/
+darray interpolationMatrix1D(const darray& xFrom, const darray& xTo) {
+  
+  // Create nodal representation of the reference bases
+  int order = xFrom.size(1) - 1; // Assumes order = (size of xFrom)-1
+  
+  int nFrom = xFrom.size(1);
+  darray lFrom = legendre(order, xFrom);
+  
+  darray coeffsPhi{order+1,order+1};
+  for (int ipx = 0; ipx <= order; ++ipx) {
+    coeffsPhi(ipx,ipx) = 1.0;
+  }
+  MKL_INT ipiv[nFrom];
+  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  
+  // Compute reference bases on the output points
+  int nTo   =   xTo.size(1);
+  darray lTo = legendre(order, xTo);
+  
+  // Construct interpolation matrix = lTo*coeffsPhi
+  darray INTERP{nTo, nFrom};
+  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+	      nTo, nFrom, nFrom, 1.0, lTo.data(), nTo, 
+	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
+  
+  return INTERP;
+  
+}
+
+/**
+   Computes an interpolation matrix from a set of 2D points to another set of 2D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a square.
+   Points interpolating onto can be of any size, but must be defined on that same square.
+*/
+darray interpolationMatrix2D(const darray& xFrom, const darray& xTo) {
+  
+  // Create nodal representation of the reference bases
+  int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
+  
+  int nFrom = xFrom.size(1)*xFrom.size(2);
+  darray lFrom = legendre2D(order, xFrom);
+  
+  darray coeffsPhi{order+1,order+1,order+1,order+1};
+  for (int ipy = 0; ipy <= order; ++ipy) {
+    for (int ipx = 0; ipx <= order; ++ipx) {
+      coeffsPhi(ipx,ipy,ipx,ipy) = 1.0;
+    }
+  }
+  MKL_INT ipiv[nFrom];
+  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  
+  // Compute reference bases on the output points
+  int nTo   =   xTo.size(1)*  xTo.size(2);
+  darray lTo = legendre2D(order, xTo);
+  
+  // Construct interpolation matrix = lTo*coeffsPhi
+  darray INTERP{nTo, nFrom};
+  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+	      nTo, nFrom, nFrom, 1.0, lTo.data(), nTo, 
+	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
+  
+  return INTERP;
   
 }
 
