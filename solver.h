@@ -26,6 +26,7 @@ private:
   darray Mel;
   darray Sels;
   darray Kels;
+  darray M2D;
   
   darray wQ2D;
   darray Interp2D;
@@ -33,22 +34,34 @@ private:
   darray Interp3D;
   
   darray u;
+  darray u0;
+  
+  const double a[Mesh::DIM];
   
   void precomputeLocalMatrices();
   void precomputeInterpMatrices();
+  void initialCondition();
   
-  void rhs(const darray& ucurr, darray& ks, int istage) const;
+  void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
+  void rk4Rhs(const darray& ucurr, darray& Dus, darray& ks, int istage) const;
   
-  darray localDGFlux(const darray& u) const;
-  inline double fluxL(double u) const;
+  void localDGFlux(const darray& uCurr, darray& globalFlux) const;
+  inline double numericalFluxL(double uK, double uN, double normalK, double normalN) const;
+  
+  void convectDGFlux(const darray& uCurr, darray& globalFlux) const;
+  inline double numericalFluxC(double uK, double uN, const darray& normalK, const darray& normalN) const;
+  inline double fluxC(double uK, int l) const;
+  
+  void convectDGVolume(const darray& uCurr, darray& residual) const;
+  inline double fluxV(double uK, const darray& DuK, int l) const;
+  void viscousDGVolume(const darray& uCurr, const darray& Dus, darray& residual) const;
   
 public:
   Solver();
   Solver(int _p, double _tf, const Mesh& _mesh);
   
-  void initialCondition();
   void dgTimeStep();
-
+  
 };
 
 #endif

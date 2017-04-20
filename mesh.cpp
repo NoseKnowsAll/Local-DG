@@ -318,28 +318,32 @@ Mesh::Mesh(const Mesh& other) :
 void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   
   order = _order;
-  nNodes = chebyNodes.size(1);
+  nNodes = chebyNodes.size(1)*chebyNodes.size(2)*chebyNodes.size(3);
+  darray refNodes{chebyNodes, DIM, nNodes}; 
   
   // Scales and translates Chebyshev nodes into each element
   globalCoords.realloc(DIM, nNodes, nElements);
   for (int k = 0; k < nElements; ++k) {
-    darray botLeft{vertices(0, eToV(0, k)), DIM};
-    darray topRight{vertices(0, eToV(7, k)), DIM};
-    darray diff{topRight - botLeft};
+    darray botLeft{&vertices(0, eToV(0, k)), DIM};
+    darray topRight{&vertices(0, eToV(7, k)), DIM};
     
-    // TODO: confirm diff is correct
+    std::cout << "k: " << k << std::endl;
     std::cout << "botLeft = " << botLeft << std::endl;
     std::cout << "topRight = " << topRight << std::endl;
-    std::cout << "difference = " << diff << std::endl;
     
     for (int iN = 0; iN < nNodes; ++iN) {
-      for (int j = 0; j < DIM; ++j) {
-	// amount in [0,1] to scale jth dimension
-	double scale = .5*(chebyNodes(j,iN)+1);
-	globalCoords(j,iN,k) = botLeft(j)+scale*diff(j);
+      for (int l = 0; l < DIM; ++l) {
+	std::cout << "refNodes(" << l << ", " << iN << ") = " << refNodes(l,iN) << std::endl;
+	// amount in [0,1] to scale lth dimension
+	double scale = .5*(refNodes(l,iN)+1.0);
+	globalCoords(l,iN,k) = botLeft(l)+scale*(topRight(l)-botLeft(l));
       }
     }
+    
+    std::cout << "finished k=" << k << std::endl;
   }
+  
+  std::cout << "Now setting up efToN array!" << std::endl;
   
   // TODO: Confirm efToN is correct
   // Assumes that nNodes = (order+1)^3 and each face is a square
