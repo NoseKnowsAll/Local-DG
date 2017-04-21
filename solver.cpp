@@ -34,10 +34,7 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   // Initialize nodes within elements
   chebyshev3D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
-  std::cout << refNodes << std::endl;
   mesh.setupNodes(refNodes, order);
-  
-  std::cout << "setup nodes successfully!" << std::endl;
   
   // TODO: DEPENDS ON PDE
   nStates = 1;
@@ -123,9 +120,15 @@ void Solver::precomputeLocalMatrices() {
   }
   
   // Initialize mass matrix = integrate(phi_i*phi_j)
+  // assumes all elements are the same size...
+  darray alpha{Mesh::DIM};
+  alpha(0) = mesh.minDX/2.0;
+  alpha(1) = mesh.minDY/2.0;
+  alpha(2) = mesh.minDZ/2.0;
+  double Jacobian = alpha(0)*alpha(1)*alpha(2);
   Mel.realloc(dofs,dofs);
   cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-	      dofs, dofs, sizeQ, 1.0, phiQ.data(), sizeQ, 
+	      dofs, dofs, sizeQ, Jacobian, phiQ.data(), sizeQ, 
 	      polyQuad.data(), sizeQ, 0.0, Mel.data(), dofs);
   
   // TODO: We should also precompute inv(Mel) right here? 
@@ -133,17 +136,19 @@ void Solver::precomputeLocalMatrices() {
   // Initialize stiffness matrices = integrate(dx_l(phi_i)*phi_j)
   Sels.realloc(dofs,dofs,Mesh::DIM);
   for (int l = 0; l < Mesh::DIM; ++l) {
+    double scaleL = Jacobian/alpha(l);
     cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-		dofs, dofs, sizeQ, 1.0, &dPhiQ(0,0,0,0,l), sizeQ, 
+		dofs, dofs, sizeQ, scaleL, &dPhiQ(0,0,0,0,l), sizeQ, 
 		polyQuad.data(), sizeQ, 0.0, &Sels(0,0,l), dofs);
   }
   
   // Initialize K matrices = dx_l(phi_i)*weights
   Kels.realloc(sizeQ,dofs,Mesh::DIM);
   for (int l = 0; l < Mesh::DIM; ++l) {
+    double scaleL = Jacobian/alpha(l);
     for (int iDofs = 0; iDofs < dofs; ++iDofs) {
       for (int iQ = 0; iQ < sizeQ; ++iQ) {
-	Kels(iQ, iDofs, l) = dPhiQ(iQ, iDofs,0,0, l)*wQ(iQ);
+	Kels(iQ, iDofs, l) = dPhiQ(iQ, iDofs,0,0, l)*wQ(iQ)*scaleL;
       }
     }
   }
@@ -157,10 +162,13 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  M2D.realloc(fDofs,fDofs);
-  cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-	      fDofs,fDofs,sizeQ, 1.0, weightedInterp.data(), sizeQ,
-	      Interp2D.data(), sizeQ, 0.0, M2D.data(), fDofs);
+  M2D.realloc(fDofs,fDofs,Mesh::DIM);
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    double scaleL = Jacobian/alpha(l);
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		fDofs,fDofs,sizeQ, scaleL, weightedInterp.data(), sizeQ,
+		Interp2D.data(), sizeQ, 0.0, &M2D(0,0,l), fDofs);
+  }
   
 }
 
@@ -182,7 +190,7 @@ void Solver::initialCondition() {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    
-	    u(vID, iS, k) = a*std::exp(-std::pow(x,2.0)/(2*sigmaSq));
+	    u(vID, iS, k) = a*std::exp(-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0)/(2*sigmaSq));
 	  }
 	}
       }
@@ -221,6 +229,8 @@ void Solver::dgTimeStep() {
   darray ks{dofs, nStates, mesh.nElements, nStages};
   darray Dus{dofs, nStates, mesh.nElements, Mesh::DIM};
   
+  std::cout << "Time stepping until tf = " << tf << std::endl;
+  
   auto startTime = std::chrono::high_resolution_clock::now();
   
   // Loop over time steps
@@ -244,6 +254,9 @@ void Solver::dgTimeStep() {
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
+	    if (iK == 0) {
+	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << "\n";
+	    }
 	  }
 	}
       }
@@ -330,7 +343,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& Dus, darray& ks, int istage) co
   convectDGVolume(uCurr, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  viscousDGVolume(uCurr, Dus, residual);
+  //viscousDGVolume(uCurr, Dus, residual); // TODO: uncomment this
   
   // ks(:,istage) = Mel\ks(:,istage)
   MKL_INT ipiv[dofs];
@@ -465,13 +478,13 @@ void Solver::convectDGFlux(const darray& uCurr, darray& globalFlux) const {
 	
       }
       
+      // Flux contribution = M2D*fstar
+      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
+		  nFN, nStates, nFN, 1.0, &M2D(0,0,iF/2), nFN, 
+		  &fStar(0,0,iF), nFN, 
+		  0.0, &faceContributions(0,0,iF), nFN);
+      
     }
-    
-    // Flux contribution = M2D*fstar
-    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-		nFN, nStates*Mesh::N_FACES, nFN, 1.0, M2D.data(), nFN, 
-		fStar.data(), nFN, 
-		0.0, faceContributions.data(), nFN);
     
     // Add up face contributions into global flux array
     // Performed outside the above loops, thinking ahead to OpenMP...

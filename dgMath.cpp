@@ -511,13 +511,6 @@ void interpolationMatrix1D(const darray& xFrom, const darray& xTo, darray& INTER
 */
 void interpolationMatrix2D(const darray& xFrom, const darray& xTo, darray& INTERP) {
   
-  for (int l = 0; l < xFrom.ndim(); ++l) {
-    std::cout << "l=" << l << ", dim = " << xFrom.size(l) << std::endl;
-  }
-  for (int l = 0; l < xTo.ndim(); ++l) {
-    std::cout << "l=" << l << ", dim = " << xTo.size(l) << std::endl;
-  }
-  
   // Create nodal representation of the reference bases
   int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
   

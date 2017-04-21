@@ -336,7 +336,6 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
     }
   }
   
-  // TODO: Confirm efToN is correct
   // Assumes that nNodes = (order+1)^3 and each face is a square
   efToN.realloc(order+1,order+1, N_FACES);
   
