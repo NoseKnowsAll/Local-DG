@@ -25,7 +25,7 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   
   // Initialize time stepping information
   // TODO: choose dt based on CFL condition - DEPENDS ON PDE
-  double maxVel = 3.0;
+  double maxVel = *std::max_element(a, a+Mesh::DIM);
   dt = 0.5*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/maxVel;
   // Ensure we will exactly end at tf
   timesteps = std::ceil(tf/dt);
@@ -56,7 +56,7 @@ void Solver::precomputeInterpMatrices() {
   darray cheby2D;
   chebyshev2D(order, cheby2D);
   darray xQ2D, wQ2D;
-  int nquads2D   = gaussQuad2D(order, xQ2D, wQ2D);
+  int nquads2D   = gaussQuad2D(2*order, xQ2D, wQ2D);
   
   interpolationMatrix2D(cheby2D, xQ2D, Interp2D);
   
@@ -64,7 +64,7 @@ void Solver::precomputeInterpMatrices() {
   darray cheby3D;
   chebyshev3D(order, cheby3D);
   darray xQ3D, wQ3D;
-  int nquads3D   = gaussQuad3D(order, xQ3D, wQ3D);
+  int nquads3D   = gaussQuad3D(2*order, xQ3D, wQ3D);
   
   interpolationMatrix3D(cheby3D, xQ3D, Interp3D);
   
@@ -108,12 +108,11 @@ void Solver::precomputeLocalMatrices() {
   }
   
   // Store weights*phiQ in polyQuad to avoid recomputing 4 times
-  polyQuad = phiQ;
   for (int ipz = 0; ipz <= order; ++ipz) {
     for (int ipy = 0; ipy <= order; ++ipy) {
       for (int ipx = 0; ipx <= order; ++ipx) {
 	for (int iQ = 0; iQ < sizeQ; ++iQ) {
-	  polyQuad(iQ, ipx,ipy,ipz) *= wQ(iQ);
+	  polyQuad(iQ, ipx,ipy,ipz) = phiQ(iQ, ipx,ipy,ipz)*wQ(iQ);
 	}
       }
     }
@@ -130,6 +129,15 @@ void Solver::precomputeLocalMatrices() {
   cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
 	      dofs, dofs, sizeQ, Jacobian, phiQ.data(), sizeQ, 
 	      polyQuad.data(), sizeQ, 0.0, Mel.data(), dofs);
+  
+  /*
+    // TODO: currently det(Mel) = 1e-131 => 0. Inverse of Mel blows up
+  std::cout << "M = [" << std::endl;
+  std::cout << Mel << std::endl;
+  std::cout << "];" << std::endl;
+  std::cout << "M = reshape(M, [27,27]);" << std::endl;
+  exit(0);
+  */
   
   // TODO: We should also precompute inv(Mel) right here? 
   
@@ -348,7 +356,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& Dus, darray& ks, int istage) co
   // ks(:,istage) = Mel\ks(:,istage)
   MKL_INT ipiv[dofs];
   int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, nStates*mesh.nElements, 
-			   Mel.data(), dofs, ipiv, residual, dofs);
+			   Mel.data(), dofs, ipiv, residual.data(), dofs);
   
 }
 
