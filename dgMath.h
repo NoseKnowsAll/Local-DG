@@ -8,14 +8,14 @@
 
 #include "array.h"
 
-/** Returns the Chebyshev points of order p on [-1,1] */
-darray chebyshev(int p);
+/** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
+int chebyshev(int p, darray& cheby);
 
-/** Returns the Chebyshev points of order p in 2D on [-1,1]^2 */
-darray chebyshev2D(int p);
+/** Edits cheby2D to contain the Chebyshev points of order p in 2D on [-1,1]^2 */
+int chebyshev2D(int p, darray& cheby2D);
 
-/** Returns the Chebyshev points of order p in 3D on [-1,1]^3 */
-darray chebyshev3D(int p);
+/** Edits cheby3D to contain the Chebyshev points of order p in 3D on [-1,1]^3 */
+int chebyshev3D(int p, darray& cheby3D);
 
 /**
    Given an order p, computes the Gaussian quadrature points x 
@@ -42,37 +42,38 @@ int gaussQuad3D(int p, darray& x3D, darray& w3D);
    Evaluates the 1D Legendre polynomials of order 0:p on [-1,1]
    at the points specified in x
 */
-darray legendre(int p, const darray& x);
+void legendre(int p, const darray& x, darray& polys);
 
 /**
    Evaluates the 1D derivative of Legendre polynomials of order 0:p 
-   on [-1,1] at the points specified in x
+   on [-1,1] at the points specified in x.
+   Assumes polys has already been initialized by legendre().
 */
-darray dlegendre(int p, const darray& x);
+void dlegendre(int p, const darray& x, const darray& polys, darray& dpolys);
 
 /**
    Evaluates the 2D Legendre polynomials of order 0:p in each dimension on the 
-   reference element [-1,1]^2 at the points specified in x2D
+   reference element [-1,1]^2 at the points specified in x2D.
 */
-darray legendre2D(int p, const darray& x2D);
+void legendre2D(int p, const darray& x2D, darray& l2D);
 
 /**
    Evaluates the 2D derivatives of Legendre polynomials of order 0:p in each 
    dimension on the reference element [-1,1]^2 at the points specified in x2D
 */
-darray dlegendre2D(int p, const darray& x2D);
+void dlegendre2D(int p, const darray& x2D, darray& dl2D);
 
 /**
    Evaluates the 3D Legendre polynomials of order 0:p in each dimension on the 
    reference element [-1,1]^3 at the points specified in x3D
 */
-darray legendre3D(int p, const darray& x3D);
+void legendre3D(int p, const darray& x3D, darray& l3D);
 
 /**
    Evaluates the 3D derivatives of Legendre polynomials of order 0:p in each 
    dimension on the reference element [-1,1]^3 at the points specified in x3D
 */
-darray dlegendre3D(int p, const darray& x3D);
+void dlegendre3D(int p, const darray& x3D, darray& dl3D);
 
 /**
    Computes an interpolation matrix from a set of 1D points to another set of 1D points.
@@ -80,7 +81,7 @@ darray dlegendre3D(int p, const darray& x3D);
    they are well spaced out and of high enough order), and define an interval.
    Points interpolating onto can be of any size, but must be defined on that same interval.
 */
-darray interpolationMatrix1D(const darray& xFrom, const darray& xTo);
+void interpolationMatrix1D(const darray& xFrom, const darray& xTo, darray& INTERP);
 
 /**
    Computes an interpolation matrix from a set of 2D points to another set of 2D points.
@@ -88,7 +89,7 @@ darray interpolationMatrix1D(const darray& xFrom, const darray& xTo);
    they are well spaced out and of high enough order), and define a square.
    Points interpolating onto can be of any size, but must be defined on that same square.
 */
-darray interpolationMatrix2D(const darray& xFrom, const darray& xTo);
+void interpolationMatrix2D(const darray& xFrom, const darray& xTo, darray& INTERP);
 
 /**
    Computes an interpolation matrix from a set of 3D points to another set of 3D points.
@@ -96,6 +97,6 @@ darray interpolationMatrix2D(const darray& xFrom, const darray& xTo);
    they are well spaced out and of high enough order), and define a cube.
    Points interpolating onto can be of any size, but must be defined on that same cube.
 */
-darray interpolationMatrix3D(const darray& xFrom, const darray& xTo);
+void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTERP);
 
 #endif

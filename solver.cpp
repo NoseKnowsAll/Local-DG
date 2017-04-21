@@ -17,9 +17,7 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   Sels{},
   Kels{},
   M2D{},
-  wQ2D{},
   Interp2D{},
-  wQ3D{},
   Interp3D{},
   u{},
   a{1,2,3}
@@ -34,10 +32,12 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   dt = tf/timesteps;
   
   // Initialize nodes within elements
-  refNodes = chebyshev3D(order);
+  chebyshev3D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
   std::cout << refNodes << std::endl;
   mesh.setupNodes(refNodes, order);
+  
+  std::cout << "setup nodes successfully!" << std::endl;
   
   // TODO: DEPENDS ON PDE
   nStates = 1;
@@ -50,14 +50,35 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   // Compute local matrices
   precomputeLocalMatrices();
   
-    
+}
+
+/** Precomputes all the interpolation matrices used by Local DG method */
+void Solver::precomputeInterpMatrices() {
+  
+  // 2D interpolation matrix for use on faces
+  darray cheby2D;
+  chebyshev2D(order, cheby2D);
+  darray xQ2D, wQ2D;
+  int nquads2D   = gaussQuad2D(order, xQ2D, wQ2D);
+  
+  interpolationMatrix2D(cheby2D, xQ2D, Interp2D);
+  
+  // 3D interpolation matrix for use on elements
+  darray cheby3D;
+  chebyshev3D(order, cheby3D);
+  darray xQ3D, wQ3D;
+  int nquads3D   = gaussQuad3D(order, xQ3D, wQ3D);
+  
+  interpolationMatrix3D(cheby3D, xQ3D, Interp3D);
+  
 }
 
 /** Precomputes all the local matrices used by Local DG method */
 void Solver::precomputeLocalMatrices() {
   
   // Create nodal representation of the reference bases
-  darray l3D = legendre3D(order, refNodes);
+  darray l3D;
+  legendre3D(order, refNodes, l3D);
   
   darray coeffsPhi{order+1,order+1,order+1,order+1,order+1,order+1};
   for (int ipz = 0; ipz <= order; ++ipz) {
@@ -74,8 +95,9 @@ void Solver::precomputeLocalMatrices() {
   // Compute reference bases on the quadrature points
   darray xQ, wQ;
   int sizeQ = gaussQuad3D(2*order, xQ, wQ);
-  darray polyQuad = legendre3D(order, xQ);
-  darray dPolyQuad = dlegendre3D(order, xQ);
+  darray polyQuad, dPolyQuad;
+  legendre3D(order, xQ, polyQuad);
+  dlegendre3D(order, xQ, dPolyQuad);
   
   darray phiQ{sizeQ,order+1,order+1,order+1};
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
@@ -129,7 +151,7 @@ void Solver::precomputeLocalMatrices() {
   // Initialize 2D mass matrix for use along faces
   int fDofs = (order+1)*(order+1);
   darray weightedInterp{sizeQ,fDofs};
-  for (int iDofs = 0; iDofs < fDofs; ++fDofs) {
+  for (int iDofs = 0; iDofs < fDofs; ++iDofs) {
     for (int iQ = 0; iQ < sizeQ; ++iQ) {
       weightedInterp(iQ,iDofs) = Interp2D(iQ,iDofs)*wQ(iQ);
     }
@@ -139,25 +161,6 @@ void Solver::precomputeLocalMatrices() {
   cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
 	      fDofs,fDofs,sizeQ, 1.0, weightedInterp.data(), sizeQ,
 	      Interp2D.data(), sizeQ, 0.0, M2D.data(), fDofs);
-  
-}
-
-/** Precomputes all the interpolation matrices used by Local DG method */
-void Solver::precomputeInterpMatrices() {
-  
-  // 2D interpolation matrix for use on faces
-  darray cheby2D = chebyshev2D(order);
-  darray xQ2D;
-  int nquads2D   = gaussQuad2D(order, xQ2D, wQ2D);
-  
-  Interp2D = interpolationMatrix2D(cheby2D, xQ2D);
-  
-  // 3D interpolation matrix for use on elements
-  darray cheby3D = chebyshev3D(order);
-  darray xQ3D;
-  int nquads3D   = gaussQuad3D(order, xQ3D, wQ3D);
-  
-  Interp3D = interpolationMatrix3D(cheby3D, xQ3D);
   
 }
 
@@ -344,7 +347,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& Dus, darray& ks, int istage) co
 */
 void Solver::localDGFlux(const darray& uCurr, darray& globalFlux) const {
   
-  int nQ2D = wQ2D.size(0);
+  int nQ2D = Interp2D.size(0);
   
   // Loop over all elements
   for (int iK = 0; iK < mesh.nElements; ++iK) {
@@ -383,10 +386,11 @@ void Solver::localDGFlux(const darray& uCurr, darray& globalFlux) const {
 	  }
 	  
 	  // contribution = integrand'*wQ2D
-	  cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-		      mesh.nFNodes, 1, nQ2D, 1.0, integrand.data(), nQ2D, 
-		      wQ2D.data(), nQ2D, 
-		      0.0, &faceContributions(0,iF,iS,l), mesh.nFNodes);
+	  // TODO: this won't work as is because wQ2D is a vector
+	  //cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
+	  //mesh.nFNodes, 1, nQ2D, 1.0, integrand.data(), nQ2D, 
+	  //wQ2D.data(), nQ2D, 
+	  //0.0, &faceContributions(0,iF,iS,l), mesh.nFNodes);
 	  
 	}
 	

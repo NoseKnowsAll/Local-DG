@@ -28,9 +28,7 @@ private:
   darray Kels;
   darray M2D;
   
-  darray wQ2D;
   darray Interp2D;
-  darray wQ3D;
   darray Interp3D;
   
   darray u;

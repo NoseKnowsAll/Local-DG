@@ -1,22 +1,23 @@
 #include "dgMath.h"
 
-/** Returns the Chebyshev points of order p on [-1,1] */
-darray chebyshev(int p) {
+/** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
+int chebyshev(int p, darray& cheby) {
   
-  darray cheby{p+1};
+  cheby.realloc(p+1);
   for (int i = 0; i <= p; ++i) {
     cheby(i) = cos((p-i)*M_PI/p);
   }
-  return cheby;
+  return p+1;
   
 }
 
-/** Returns the Chebyshev points of order p in 2D on [-1,1]^2 */
-darray chebyshev2D(int p) {
+/** Edits cheby2D to contain the Chebyshev points of order p in 2D on [-1,1]^2 */
+int chebyshev2D(int p, darray& cheby2D) {
   
-  darray cheby = chebyshev(p);
+  darray cheby;
+  chebyshev(p, cheby);
   
-  darray cheby2D{2, p+1,p+1};
+  cheby2D.realloc(2, p+1,p+1);
   for (int iy = 0; iy <= p; ++iy) {
     for (int ix = 0; ix <= p; ++ix) {
       cheby2D(0, ix,iy) = cheby(ix);
@@ -24,22 +25,20 @@ darray chebyshev2D(int p) {
     }
   }
   
-  return cheby2D;
+  return (p+1)*(p+1);
   
 }
 
-/** Returns the Chebyshev points of order p in 3D on [-1,1]^3 */
-darray chebyshev3D(int p) {
+/** Edits cheby3D to contain the Chebyshev points of order p in 3D on [-1,1]^3 */
+int chebyshev3D(int p, darray& cheby3D) {
   
-  darray cheby = chebyshev(p);
+  darray cheby;
+  chebyshev(p, cheby);
   
-  //int nNodes = (p+1)*(p+1)*(p+1);
-  darray cheby3D{3, p+1,p+1,p+1};
+  cheby3D.realloc(3, p+1,p+1,p+1);
   for (int iz = 0; iz <= p; ++iz) {
     for (int iy = 0; iy <= p; ++iy) {
       for (int ix = 0; ix <= p; ++ix) {
-	//int vID = ix+iy*(p+1)+iz*(p+1)*(p+1);
-	
 	cheby3D(0, ix,iy,iz) = cheby(ix);
 	cheby3D(1, ix,iy,iz) = cheby(iy);
 	cheby3D(2, ix,iy,iz) = cheby(iz);
@@ -47,9 +46,7 @@ darray chebyshev3D(int p) {
     }
   }
   
-  // TODO: should we reshape into 1D?
-  //cheby3D.resize(3, nNodes);
-  return cheby3D;
+  return (p+1)*(p+1)*(p+1);
   
 }
 
@@ -107,8 +104,7 @@ int gaussQuad2D(int p, darray& x2D, darray& w2D) {
     }
   }
   
-  int totalPts = n*n;
-  return totalPts;
+  return n*n;
 }
 
 /**
@@ -138,39 +134,36 @@ int gaussQuad3D(int p, darray& x3D, darray& w3D) {
     }
   }
   
-  int totalPts = n*n*n;
-  // TODO: should we reshape to 1D?
-  //x3D.reshape(3, totalPts);
-  //w3D.reshape(totalPts);
-  return totalPts;
+  return n*n*n;
 }
 
 /**
    Evaluates the 1D Legendre polynomials of order 0:p on [-1,1]
-   at the points specified in x
+   at the points specified in x.
 */
-darray legendre(int p, const darray& x) {
+void legendre(int p, const darray& x, darray& polys) {
   
   int nx = x.size(0);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    return darray{nx, 1};
+    polys.realloc(nx, 1);
+    return;
   }
   
-  darray polys{nx, p+1};
+  polys.realloc(nx, p+1);
   
   // Initialize p_0(x) = 1
   for (int i = 0; i < nx; ++i) {
     polys(i, 0) = 1.0;
   }
   if (p == 0)
-    return polys;
+    return;
   // Initialize p_1(x) = x
   for (int i = 0; i < nx; ++i) {
     polys(i, 1) = x(i);
   }
   if (p == 1)
-    return polys;
+    return;
   
   // Three-term recurrence relationship
   for (int ip = 0; ip < p-1; ++ip) {
@@ -178,49 +171,46 @@ darray legendre(int p, const darray& x) {
       polys(i,ip+2) = ((2*ip+3)*x(i)*polys(i,ip+1) - (ip+1)*polys(i,ip)) / (ip+2);
     }
   }
-  return polys;
+  return;
   
 }
 
 /**
    Evaluates the 1D derivative of Legendre polynomials of order 0:p 
-   on [-1,1] at the points specified in x
+   on [-1,1] at the points specified in x.
+   Assumes polys has already been initialized by legendre().
 */
-darray dlegendre(int p, const darray& x) {
+void dlegendre(int p, const darray& x, const darray& polys, darray& dpolys) {
   
   int nx = x.size(0);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    return darray{nx, 1};
+    dpolys.realloc(nx, 1);
+    return;
   }
   
-  darray polys {nx, p+1};
-  darray dpolys{nx, p+1};
+  dpolys.realloc(nx, p+1);
   
   // Initialize dp_0(x) = 0
   for (int i = 0; i < nx; ++i) {
-    polys (i, 0) = 1.0;
     dpolys(i, 0) = 0.0;
   }
   if (p == 0)
-    return dpolys;
+    return;
   // Initialize dp_1(x) = 1
   for (int i = 0; i < nx; ++i) {
-    polys (i, 1) = x(i);
     dpolys(i, 1) = 1.0;
   }
   if (p == 1)
-    return dpolys;
+    return;
   
   // Three-term recurrence relationship
   for (int ip = 0; ip < p-1; ++ip) {
     for (int i = 0; i < nx; ++i) {
-      polys(i,ip+2) = ((2*ip+3)*x(i)*polys(i,ip+1) - (ip+1)*polys(i,ip)) / (ip+2);
       dpolys(i,ip+2) = ((2*ip+3)*(x(i)*dpolys(i,ip+1) + polys(i,ip+1))
 			- (ip+1)*dpolys(i,ip)) / (ip+2);
     }
   }
-  return dpolys;
   
 }
 
@@ -228,13 +218,14 @@ darray dlegendre(int p, const darray& x) {
    Evaluates the 2D Legendre polynomials of order 0:p in each dimension on the 
    reference element [-1,1]^2 at the points specified in x2D
 */
-darray legendre2D(int p, const darray& x2D) {
+void legendre2D(int p, const darray& x2D, darray& l2D) {
   
   int nx = x2D.size(1);
   int ny = x2D.size(2);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    return darray{nx,ny, 1};
+    l2D.realloc(nx*ny, 1,1);
+    return;
   }
   
   // Initialize 1D arrays from 2D input
@@ -248,11 +239,12 @@ darray legendre2D(int p, const darray& x2D) {
   }
   
   // Compute 1D Legendre polynomials
-  darray lx = legendre(p, x);
-  darray ly = legendre(p, y);
+  darray lx,ly;
+  legendre(p, x, lx);
+  legendre(p, y, ly);
   
   // Combine 1D Legendre polynomials into 2D polynomial
-  darray l2D{nx, ny, p+1, p+1};
+  l2D.realloc(nx, ny, p+1, p+1);
   
   for (int ipy = 0; ipy <= p; ++ipy) {
     for (int ipx = 0; ipx <= p; ++ipx) {
@@ -265,21 +257,21 @@ darray legendre2D(int p, const darray& x2D) {
   }
   
   l2D.resize(nx*ny, p+1,p+1);
-  return l2D;
   
 }
 
 /**
    Evaluates the 2D derivatives of Legendre polynomials of order 0:p in each 
-   dimension on the reference element [-1,1]^2 at the points specified in x2D
+   dimension on the reference element [-1,1]^2 at the points specified in x2D.
 */
-darray dlegendre2D(int p, const darray& x2D) {
+void dlegendre2D(int p, const darray& x2D, darray& dl2D) {
   
   int nx = x2D.size(1);
   int ny = x2D.size(2);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    return darray{nx,ny, 1};
+    dl2D.realloc(nx*ny, 1, 1, 2);
+    return;
   }
   
   // Initialize 1D arrays from 2D input
@@ -293,14 +285,16 @@ darray dlegendre2D(int p, const darray& x2D) {
   }
   
   // Compute 1D Legendre polynomials
-  darray lx = legendre(p, x);
-  darray ly = legendre(p, y);
+  darray lx, ly;
+  legendre(p, x, lx);
+  legendre(p, y, ly);
   // Compute 1D derivatives of Legendre polynomials
-  darray dlx = dlegendre(p, x);
-  darray dly = dlegendre(p, y);
+  darray dlx, dly;
+  dlegendre(p, x, lx, dlx);
+  dlegendre(p, y, ly, dly);
   
   // Combine 1D Legendre polynomials into 2D polynomial
-  darray dl2D{nx, ny, p+1, p+1, 2};
+  dl2D.realloc(nx, ny, p+1, p+1, 2);
   
   // x
   for (int ipy = 0; ipy <= p; ++ipy) {
@@ -324,7 +318,6 @@ darray dlegendre2D(int p, const darray& x2D) {
   }
   
   dl2D.resize(nx*ny, p+1,p+1, 2);
-  return dl2D;
   
 }
 
@@ -332,14 +325,15 @@ darray dlegendre2D(int p, const darray& x2D) {
    Evaluates the 3D Legendre polynomials of order 0:p in each dimension on the 
    reference element [-1,1]^3 at the points specified in x3D
 */
-darray legendre3D(int p, const darray& x3D) {
+void legendre3D(int p, const darray& x3D, darray& l3D) {
   
   int nx = x3D.size(1);
   int ny = x3D.size(2);
   int nz = x3D.size(3);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    return darray{nx,ny,nz, 1};
+    l3D.realloc(nx*ny*nz, 1,1,1);
+    return;
   }
   
   // Initialize 1D arrays from 3D input
@@ -357,12 +351,13 @@ darray legendre3D(int p, const darray& x3D) {
   }
   
   // Compute 1D Legendre polynomials
-  darray lx = legendre(p, x);
-  darray ly = legendre(p, y);
-  darray lz = legendre(p, z);
+  darray lx,ly,lz;
+  legendre(p, x, lx);
+  legendre(p, y, ly);
+  legendre(p, z, lz);
   
   // Combine 1D Legendre polynomials into 3D polynomial
-  darray l3D{nx, ny, nz, p+1, p+1, p+1};
+  l3D.realloc(nx, ny, nz, p+1, p+1, p+1);
   
   for (int ipz = 0; ipz <= p; ++ipz) {
     for (int ipy = 0; ipy <= p; ++ipy) {
@@ -379,7 +374,6 @@ darray legendre3D(int p, const darray& x3D) {
   }
   
   l3D.resize(nx*ny*nz, p+1,p+1,p+1);
-  return l3D;
   
 }
 
@@ -387,14 +381,15 @@ darray legendre3D(int p, const darray& x3D) {
    Evaluates the 3D derivatives of Legendre polynomials of order 0:p in each 
    dimension on the reference element [-1,1]^3 at the points specified in x3D
 */
-darray dlegendre3D(int p, const darray& x3D) {
+void dlegendre3D(int p, const darray& x3D, darray& dl3D) {
   
   int nx = x3D.size(1);
   int ny = x3D.size(2);
   int nz = x3D.size(3);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    return darray{nx,ny,nz, 1};
+    dl3D.realloc(nx*ny*nz,1,1,1,3);
+    return;
   }
   
   // Initialize 1D arrays from 3D input
@@ -412,16 +407,18 @@ darray dlegendre3D(int p, const darray& x3D) {
   }
   
   // Compute 1D Legendre polynomials
-  darray lx = legendre(p, x);
-  darray ly = legendre(p, y);
-  darray lz = legendre(p, z);
+  darray lx,ly,lz;
+  legendre(p, x, lx);
+  legendre(p, y, ly);
+  legendre(p, z, lz);
   // Compute 1D derivatives of Legendre polynomials
-  darray dlx = dlegendre(p, x);
-  darray dly = dlegendre(p, y);
-  darray dlz = dlegendre(p, z);
+  darray dlx,dly,dlz;
+  dlegendre(p, x, lx, dlx);
+  dlegendre(p, y, ly, dly);
+  dlegendre(p, z, lz, dlz);
   
   // Combine 1D Legendre polynomials into 3D polynomial
-  darray dl3D{nx, ny, nz, p+1, p+1, p+1, 3};
+  dl3D.realloc(nx, ny, nz, p+1, p+1, p+1, 3);
   
   // x
   for (int ipz = 0; ipz <= p; ++ipz) {
@@ -467,7 +464,6 @@ darray dlegendre3D(int p, const darray& x3D) {
   }
   
   dl3D.resize(nx*ny*nz, p+1,p+1,p+1, 3);
-  return dl3D;
   
 }
 
@@ -477,13 +473,14 @@ darray dlegendre3D(int p, const darray& x3D) {
    they are well spaced out and of high enough order), and define an interval.
    Points interpolating onto can be of any size, but must be defined on that same interval.
 */
-darray interpolationMatrix1D(const darray& xFrom, const darray& xTo) {
+void interpolationMatrix1D(const darray& xFrom, const darray& xTo, darray& INTERP) {
   
   // Create nodal representation of the reference bases
   int order = xFrom.size(1) - 1; // Assumes order = (size of xFrom)-1
   
   int nFrom = xFrom.size(1);
-  darray lFrom = legendre(order, xFrom);
+  darray lFrom;
+  legendre(order, xFrom, lFrom);
   
   darray coeffsPhi{order+1,order+1};
   for (int ipx = 0; ipx <= order; ++ipx) {
@@ -494,16 +491,15 @@ darray interpolationMatrix1D(const darray& xFrom, const darray& xTo) {
 			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute reference bases on the output points
-  int nTo   =   xTo.size(1);
-  darray lTo = legendre(order, xTo);
+  int nTo = xTo.size(1);
+  darray lTo;
+  legendre(order, xTo, lTo);
   
   // Construct interpolation matrix = lTo*coeffsPhi
-  darray INTERP{nTo, nFrom};
+  INTERP.realloc(nTo, nFrom);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
 	      nTo, nFrom, nFrom, 1.0, lTo.data(), nTo, 
 	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
-  
-  return INTERP;
   
 }
 
@@ -513,13 +509,21 @@ darray interpolationMatrix1D(const darray& xFrom, const darray& xTo) {
    they are well spaced out and of high enough order), and define a square.
    Points interpolating onto can be of any size, but must be defined on that same square.
 */
-darray interpolationMatrix2D(const darray& xFrom, const darray& xTo) {
+void interpolationMatrix2D(const darray& xFrom, const darray& xTo, darray& INTERP) {
+  
+  for (int l = 0; l < xFrom.ndim(); ++l) {
+    std::cout << "l=" << l << ", dim = " << xFrom.size(l) << std::endl;
+  }
+  for (int l = 0; l < xTo.ndim(); ++l) {
+    std::cout << "l=" << l << ", dim = " << xTo.size(l) << std::endl;
+  }
   
   // Create nodal representation of the reference bases
   int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
   
   int nFrom = xFrom.size(1)*xFrom.size(2);
-  darray lFrom = legendre2D(order, xFrom);
+  darray lFrom;
+  legendre2D(order, xFrom, lFrom);
   
   darray coeffsPhi{order+1,order+1,order+1,order+1};
   for (int ipy = 0; ipy <= order; ++ipy) {
@@ -532,16 +536,15 @@ darray interpolationMatrix2D(const darray& xFrom, const darray& xTo) {
 			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute reference bases on the output points
-  int nTo   =   xTo.size(1)*  xTo.size(2);
-  darray lTo = legendre2D(order, xTo);
+  int nTo = xTo.size(1)*xTo.size(2);
+  darray lTo;
+  legendre2D(order, xTo, lTo);
   
   // Construct interpolation matrix = lTo*coeffsPhi
-  darray INTERP{nTo, nFrom};
+  INTERP.realloc(nTo, nFrom);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
 	      nTo, nFrom, nFrom, 1.0, lTo.data(), nTo, 
 	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
-  
-  return INTERP;
   
 }
 
@@ -551,13 +554,14 @@ darray interpolationMatrix2D(const darray& xFrom, const darray& xTo) {
    they are well spaced out and of high enough order), and define a cube.
    Points interpolating onto can be of any size, but must be defined on that same cube.
 */
-darray interpolationMatrix3D(const darray& xFrom, const darray& xTo) {
+void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTERP) {
   
   // Create nodal representation of the reference bases
   int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
   
   int nFrom = xFrom.size(1)*xFrom.size(2)*xFrom.size(3);
-  darray lFrom = legendre3D(order, xFrom);
+  darray lFrom;
+  legendre3D(order, xFrom, lFrom);
   
   darray coeffsPhi{order+1,order+1,order+1,order+1,order+1,order+1};
   for (int ipz = 0; ipz <= order; ++ipz) {
@@ -572,15 +576,14 @@ darray interpolationMatrix3D(const darray& xFrom, const darray& xTo) {
 			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute reference bases on the output points
-  int nTo   =   xTo.size(1)*  xTo.size(2)*  xTo.size(3);
-  darray lTo = legendre3D(order, xTo);
+  int nTo = xTo.size(1)*xTo.size(2)*xTo.size(3);
+  darray lTo;
+  legendre3D(order, xTo, lTo);
   
   // Construct interpolation matrix = lTo*coeffsPhi
-  darray INTERP{nTo, nFrom};
+  INTERP.realloc(nTo, nFrom);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
 	      nTo, nFrom, nFrom, 1.0, lTo.data(), nTo, 
 	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
-  
-  return INTERP;
   
 }

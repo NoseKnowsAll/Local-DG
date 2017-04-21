@@ -327,23 +327,14 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
     darray botLeft{&vertices(0, eToV(0, k)), DIM};
     darray topRight{&vertices(0, eToV(7, k)), DIM};
     
-    std::cout << "k: " << k << std::endl;
-    std::cout << "botLeft = " << botLeft << std::endl;
-    std::cout << "topRight = " << topRight << std::endl;
-    
     for (int iN = 0; iN < nNodes; ++iN) {
       for (int l = 0; l < DIM; ++l) {
-	std::cout << "refNodes(" << l << ", " << iN << ") = " << refNodes(l,iN) << std::endl;
 	// amount in [0,1] to scale lth dimension
 	double scale = .5*(refNodes(l,iN)+1.0);
 	globalCoords(l,iN,k) = botLeft(l)+scale*(topRight(l)-botLeft(l));
       }
     }
-    
-    std::cout << "finished k=" << k << std::endl;
   }
-  
-  std::cout << "Now setting up efToN array!" << std::endl;
   
   // TODO: Confirm efToN is correct
   // Assumes that nNodes = (order+1)^3 and each face is a square

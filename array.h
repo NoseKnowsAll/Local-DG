@@ -60,7 +60,7 @@ template <typename T> class array {
   explicit array(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5)
     { resize(s0, s1, s2, s3, s4, s5); allocmem(); }
   explicit array(dgSize s0, dgSize s1, dgSize s2, dgSize s3, dgSize s4, dgSize s5, dgSize s6)
-  { resize(s0, s1, s2, s3, s4, s5, s6); allocmem(); }
+    { resize(s0, s1, s2, s3, s4, s5, s6); allocmem(); }
   // template <typename idxType>
   // explicit array(std::initializer_list<idxType> s)
   //   { resize(s); allocmem(); }
@@ -254,7 +254,10 @@ template <typename T> class array {
     { std::copy(x._data, x._data+_size, _data); return *this; }
   array const& operator=(T const* x) const
     { std::copy(x, x+_size, _data); return *this; }
-
+  
+  // TODO: you currently cannot set an instance field using = 
+  // workaround is: create temp, and then call swap on temp
+  
 #define __ARRAY_OPERATOR(op)						\
   array const& operator op(T const x) const				\
     { for(dgSize i=0; i<_size; i++) _data[i] op x  ; return *this; }	\
