@@ -9,7 +9,7 @@
 /** Main driver function */
 int main(int argc, char *argv[]) {
   
-  /* Clear output debug fileds
+  /* Clear output debug files
   clearSSVFile("output/x.txt");
   clearSSVFile("output/y.txt");
   clearSSVFile("output/z.txt");
