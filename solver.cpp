@@ -68,6 +68,11 @@ void Solver::precomputeInterpMatrices() {
   
   interpolationMatrix3D(cheby3D, xQ3D, Interp3D);
   
+  std::cout << "Interp3D = [" << std::endl;
+  std::cout << Interp3D << std::endl;
+  std::cout << "];" << std::endl;
+  //exit(0);
+  
 }
 
 /** Precomputes all the local matrices used by Local DG method */
@@ -130,16 +135,14 @@ void Solver::precomputeLocalMatrices() {
 	      dofs, dofs, sizeQ, Jacobian, phiQ.data(), sizeQ, 
 	      polyQuad.data(), sizeQ, 0.0, Mel.data(), dofs);
   
-  /*
-    // TODO: currently det(Mel) = 1e-131 => 0. Inverse of Mel blows up
-  std::cout << "M = [" << std::endl;
+  
+  // TODO: currently det(Mel) = 1e-131 => 0. Inverse of Mel blows up
+  std::cout << "Mel = [" << std::endl;
   std::cout << Mel << std::endl;
   std::cout << "];" << std::endl;
-  std::cout << "M = reshape(M, [27,27]);" << std::endl;
-  exit(0);
-  */
+  std::cout << "Mel = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
   
-  // TODO: We should also precompute inv(Mel) right here? 
+  // TODO: We should also precompute inv(Mel) right here?
   
   // Initialize stiffness matrices = integrate(dx_l(phi_i)*phi_j)
   Sels.realloc(dofs,dofs,Mesh::DIM);
@@ -162,10 +165,11 @@ void Solver::precomputeLocalMatrices() {
   }
   
   // Initialize 2D mass matrix for use along faces
+  int fSizeQ = gaussQuad2D(2*order, xQ, wQ);
   int fDofs = (order+1)*(order+1);
-  darray weightedInterp{sizeQ,fDofs};
+  darray weightedInterp{fSizeQ,fDofs};
   for (int iDofs = 0; iDofs < fDofs; ++iDofs) {
-    for (int iQ = 0; iQ < sizeQ; ++iQ) {
+    for (int iQ = 0; iQ < fSizeQ; ++iQ) {
       weightedInterp(iQ,iDofs) = Interp2D(iQ,iDofs)*wQ(iQ);
     }
   }
@@ -174,8 +178,8 @@ void Solver::precomputeLocalMatrices() {
   for (int l = 0; l < Mesh::DIM; ++l) {
     double scaleL = Jacobian/alpha(l);
     cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		fDofs,fDofs,sizeQ, scaleL, weightedInterp.data(), sizeQ,
-		Interp2D.data(), sizeQ, 0.0, &M2D(0,0,l), fDofs);
+		fDofs,fDofs,fSizeQ, scaleL, weightedInterp.data(), fSizeQ,
+		Interp2D.data(), fSizeQ, 0.0, &M2D(0,0,l), fDofs);
   }
   
 }
@@ -332,15 +336,10 @@ void Solver::rk4Rhs(const darray& uCurr, darray& Dus, darray& ks, int istage) co
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // du/dt = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
-  darray residual{&ks(0,0,0,istage), dofs, nStates, mesh.nElements};
   
-  for (int iK = 0; iK < mesh.nElements; ++iK) {
-    for (int iS = 0; iS < nStates; ++iS) {
-      for (int iN = 0; iN < dofs; ++iN) {
-	residual(iN,iS,iK,istage) = 0.0;
-      }
-    }
-  }
+  darray residual{&ks(0,0,0,istage), dofs, nStates, mesh.nElements};
+  residual.fill(0.0);
+  
   convectDGFlux(uCurr, residual);
   //viscousDGFlux(uCurr, Dus, residual); // TODO: write this
   
@@ -353,10 +352,22 @@ void Solver::rk4Rhs(const darray& uCurr, darray& Dus, darray& ks, int istage) co
   // ks(:,istage) += Kv*fv(u)
   //viscousDGVolume(uCurr, Dus, residual); // TODO: uncomment this
   
+  //std::cout << "res = [" << std::endl;
+  //std::cout << residual << std::endl;
+  //std::cout << "];" << std::endl;
+  //std::cout << "res = reshape(res, [" << dofs << ", " << nStates*mesh.nElements << "]);" << std::endl;
+  
   // ks(:,istage) = Mel\ks(:,istage)
   MKL_INT ipiv[dofs];
   int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, nStates*mesh.nElements, 
 			   Mel.data(), dofs, ipiv, residual.data(), dofs);
+  
+  //std::cout << "answer = [" << std::endl;
+  //std::cout << residual << std::endl;
+  //std::cout << "];" << std::endl;
+  //std::cout << "answer = reshape(answer, [" << dofs << ", " << nStates*mesh.nElements << "]);" << std::endl;
+  
+  //exit(0);
   
 }
 
@@ -452,7 +463,8 @@ inline double Solver::numericalFluxL(double uK, double uN, double normalK, doubl
    1st-order convection term.
    Uses upwinding for the numerical flux. TODO: Use Per's Roe solver.
    Updates globalFlux variable with added flux
-   TODO: Can you first evaluate fc(u) and then interpolate, or must you do fc(Interpolated u)?
+   TODO: Can only first evaluate fc(u) and then interpolate if fc(u) is linear
+   Otherwise must compute fc(Interpolated u)?
 */
 void Solver::convectDGFlux(const darray& uCurr, darray& globalFlux) const {
   
@@ -465,6 +477,7 @@ void Solver::convectDGFlux(const darray& uCurr, darray& globalFlux) const {
     darray fStar{nFN, nStates, Mesh::N_FACES}; // TODO: should we move this out of for loop
     darray faceContributions{nFN, nStates, Mesh::N_FACES};
     
+    // For every face, compute flux = integrate over face (fstar*phi_i)
     for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
       
       auto nF = mesh.eToF(iF, iK);
@@ -473,17 +486,14 @@ void Solver::convectDGFlux(const darray& uCurr, darray& globalFlux) const {
       darray normalK{&mesh.normals(0, iF, iK), 3};
       darray normalN{&mesh.normals(0, nF, nK), 3};
       
+      // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
-	
-	// For every face, compute flux = integrate over face (fstar*phi_i)
-	// Must compute nStates of these flux integrals per face
 	for (int iFN = 0; iFN < nFN; ++iFN) {
 	  auto uK = uCurr(mesh.efToN(iFN, iF), iS, iK);
 	  auto uN = uCurr(mesh.efToN(iFN, nF), iS, nK);
 	  
 	  fStar(iFN, iS, iF) = numericalFluxC(uK, uN, normalK, normalN);
 	}
-	
       }
       
       // Flux contribution = M2D*fstar
@@ -517,7 +527,7 @@ inline double Solver::numericalFluxC(double uK, double uN, const darray& normalK
   for (int l = 0; l < Mesh::DIM; ++l) {
     auto fK = fluxC(uK, l);
     auto fN = fluxC(uN, l);
-    // upwinding assuming a is always positive
+    // upwinding assuming a[l] is always positive
     result += (normalK(l) > 0.0 ? fK : fN)*normalK(l);
   }
   
