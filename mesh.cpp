@@ -157,7 +157,6 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 
 /** Main constructor */
 Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) :
-  globalCoords{},
   nElements{nx*ny*nz},
   nVertices{(nx+1)*(ny+1)*(nz+1)},
   botLeft{_botLeft},
@@ -168,6 +167,7 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Poin
   order{_order},
   nNodes{},
   nFNodes{},
+  globalCoords{},
   vertices{},
   eToV{},
   eToE{},
@@ -295,7 +295,6 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Poin
 
 /** Copy constructor */
 Mesh::Mesh(const Mesh& other) :
-  globalCoords{other.globalCoords},
   nElements{other.nElements},
   botLeft{other.botLeft},
   topRight{other.topRight},
@@ -306,6 +305,7 @@ Mesh::Mesh(const Mesh& other) :
   order{other.order},
   nNodes{other.nNodes},
   nFNodes{other.nFNodes},
+  globalCoords{other.globalCoords},
   vertices{other.vertices},
   eToV{other.eToV},
   eToE{other.eToE},

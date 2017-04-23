@@ -9,6 +9,7 @@
 
 #include "mesh.h"
 #include "dgMath.h"
+#include "io.h"
 
 class Solver {
 private:

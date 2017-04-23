@@ -78,20 +78,6 @@ inline bool operator!=(const Element& lhs, const Element& rhs);
 class Mesh {
 public:
   
-  ///////////////////////////////////////
-  // Initialized after solver is created
-  ///////////////////////////////////////
-  /**
-     True coordinates of chebyshev nodes for each element:
-     For every element k, node i,
-     globalCoords(:, i,k) = 3D location of node i
-  */
-  darray globalCoords;
-  
-  /** Holds all 3D coordinates of each element's vertices */
-  // TODO: should we index into globalCoords? Or copy data for caching purposes?
-  //darray faceCoords;
-  
   /** Dimension of space we are modeling */ 
   const static int DIM = 3;
   /** Number of faces per element */
@@ -110,7 +96,6 @@ public:
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
-  //private:
   
   /** Global number of elements */
   int nElements;
@@ -136,6 +121,12 @@ public:
   int nNodes;
   /** Local number of DG nodes per face of an element */
   int nFNodes;
+  /**
+     True coordinates of chebyshev nodes for each element:
+     For every element k, node i,
+     globalCoords(:, i,k) = 3D location of node i
+  */
+  darray globalCoords;
   ///////////////////////////////////////
   // End of variables initialized after solver is created
   ///////////////////////////////////////

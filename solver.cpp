@@ -25,8 +25,9 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   
   // Initialize time stepping information
   // TODO: choose dt based on CFL condition - DEPENDS ON PDE
-  double maxVel = *std::max_element(a, a+Mesh::DIM);
-  dt = 0.5*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/maxVel;
+  //double maxVel = *std::max_element(a, a+Mesh::DIM);
+  double maxVel = std::accumulate(a, a+Mesh::DIM, 0.0);
+  dt = 0.1*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/(maxVel*(2*order+1));
   // Ensure we will exactly end at tf
   timesteps = std::ceil(tf/dt);
   dt = tf/timesteps;
@@ -35,6 +36,26 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   chebyshev3D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
   mesh.setupNodes(refNodes, order);
+  
+  /* TODO: debugging in MATLAB
+  darray x{dofs, mesh.nElements};
+  darray y{dofs, mesh.nElements};
+  darray z{dofs, mesh.nElements};
+  for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iN = 0; iN < dofs; ++iN) {
+      x(iN,k) = mesh.globalCoords(0, iN,k);
+      y(iN,k) = mesh.globalCoords(1, iN,k);
+      z(iN,k) = mesh.globalCoords(2, iN,k);
+    }
+  }
+  
+  exportToSSVFile("output/x.txt", x, dofs, mesh.nElements);
+  exportToSSVFile("output/y.txt", y, dofs, mesh.nElements);
+  exportToSSVFile("output/z.txt", z, dofs, mesh.nElements);
+  */
+  // TODO: debugging in Paraview
+  //exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
+  // END TODO
   
   // TODO: DEPENDS ON PDE
   nStates = 1;
@@ -67,11 +88,6 @@ void Solver::precomputeInterpMatrices() {
   int nquads3D   = gaussQuad3D(2*order, xQ3D, wQ3D);
   
   interpolationMatrix3D(cheby3D, xQ3D, Interp3D);
-  
-  std::cout << "Interp3D = [" << std::endl;
-  std::cout << Interp3D << std::endl;
-  std::cout << "];" << std::endl;
-  //exit(0);
   
 }
 
@@ -165,12 +181,13 @@ void Solver::precomputeLocalMatrices() {
   }
   
   // Initialize 2D mass matrix for use along faces
-  int fSizeQ = gaussQuad2D(2*order, xQ, wQ);
+  darray xQ2D, wQ2D;
+  int fSizeQ = gaussQuad2D(2*order, xQ2D, wQ2D);
   int fDofs = (order+1)*(order+1);
   darray weightedInterp{fSizeQ,fDofs};
   for (int iDofs = 0; iDofs < fDofs; ++iDofs) {
     for (int iQ = 0; iQ < fSizeQ; ++iQ) {
-      weightedInterp(iQ,iDofs) = Interp2D(iQ,iDofs)*wQ(iQ);
+      weightedInterp(iQ,iDofs) = Interp2D(iQ,iDofs)*wQ2D(iQ);
     }
   }
   
@@ -249,13 +266,18 @@ void Solver::dgTimeStep() {
   for (int iStep = 0; iStep < timesteps; ++iStep) {
     std::cout << "time = " << iStep*dt << std::endl;
     
+    // TODO: Debugging
+    //exportToSSVFile("output/u.txt", u, dofs, nStates*mesh.nElements);
+    exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
+    exit(0);
+    
     // Use RK4 to compute k values at each stage
     for (int istage = 0; istage < nStages; ++istage) {
       
       // Updates uCurr = u+dt*a(s,s-1)*ks(:,s)
       rk4UpdateCurr(uCurr, diagA, ks, istage);
       
-      // Updates ks(:,istage) based on DG method evaluated at uCurr
+      // Updates ks(:,istage) = rhs(uCurr) based on DG method
       rk4Rhs(uCurr, Dus, ks, istage);
       
     }
@@ -266,9 +288,9 @@ void Solver::dgTimeStep() {
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
-	    if (iK == 0) {
-	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << "\n";
-	    }
+	    //if (iK == 0) {
+	    //  std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << "\n";
+	    //}
 	  }
 	}
       }
