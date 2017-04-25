@@ -59,6 +59,17 @@ bool initXYZVFile(const std::string& filename, const std::string& valuename) {
 }
 
 /**
+   Clears a file and sets up the X-Y-Z-V headers for first time use.
+   For use with Paraview in a time series output.
+*/
+bool initXYZVFile(const std::string& filename, int timeseries, const std::string& valuename) {
+  std::ostringstream oss;
+  oss << filename << "." << timeseries;
+  
+  return initXYZVFile(oss.str(), valuename);
+}
+
+/**
    Outputs array to X-Y-Z-V file using global coordinates and value itself. 
    Concatenates to file if it exists.
    For use with Paraview.
@@ -85,4 +96,16 @@ bool exportToXYZVFile(const std::string& filename, const darray& globalCoords, c
     outFile << arr(j) << "\n";
   }
   return true;
+}
+
+/**
+   Outputs array to X-Y-Z-V file using global coordinates and value itself. 
+   Concatenates to file if it exists.
+   For use with Paraview in a time series output.
+*/
+bool exportToXYZVFile(const std::string& filename, int timeseries, const darray& globalCoords, const darray& arr) {
+  std::ostringstream oss;
+  oss << filename << "." << timeseries;
+  
+  return exportToXYZVFile(oss.str(), globalCoords, arr);
 }

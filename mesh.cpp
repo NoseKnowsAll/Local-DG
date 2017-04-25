@@ -59,13 +59,15 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Poin
   order{_order},
   nNodes{},
   nFNodes{},
+  nFQNodes{},
   globalCoords{},
   vertices{},
   eToV{},
   eToE{},
   normals{},
   eToF{},
-  efToN{}
+  efToN{},
+  efToQ{}
 {
   
   // Initialize vertices
@@ -174,13 +176,15 @@ Mesh::Mesh(const Mesh& other) :
   order{other.order},
   nNodes{other.nNodes},
   nFNodes{other.nFNodes},
+  nFQNodes{other.nFQNodes},
   globalCoords{other.globalCoords},
   vertices{other.vertices},
   eToV{other.eToV},
   eToE{other.eToE},
   normals{other.normals},
   eToF{other.eToF},
-  efToN{other.efToN}
+  efToN{other.efToN},
+  efToQ{other.efToQ}
 { }
 
 /** Initialize global nodes from solver's Chebyshev nodes */
@@ -205,8 +209,26 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
     }
   }
   
-  // Assumes that nNodes = (order+1)^3 and each face is a square
-  efToN.realloc(order+1,order+1, N_FACES);
+  // nodal points per face
+  nFNodes = initFaceMap(efToN, order+1);
+  
+  // quadrature points per face
+  int nQ = (int)std::ceil((order+1)/2.0);
+  nFQNodes = initFaceMap(efToQ, nQ);
+
+}
+
+/**
+   Initialize face maps for a given number of nodes.
+   Assumes that each face is a square with exactly size1D nodes per dimension.
+   
+   For every element k, face i, face node iFN:
+   My node @: soln(efMap(iFN, i), :, k)
+   Neighbor's node @: soln(efMap(iFN, eToF(i,k)), :, eToE(i,k))
+*/
+int Mesh::initFaceMap(iarray& efMap, int size1D) {
+  
+  efMap.realloc(size1D,size1D, N_FACES);
   
   int xOff;
   int yOff;
@@ -214,72 +236,68 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   
   // -x direction face
   xOff = 0;
-  for (int iz = 0; iz <= order; ++iz) {
-    zOff = iz*(order+1)*(order+1);
-    for (int iy = 0; iy <= order; ++iy) {
-      yOff = iy*(order+1);
-      efToN(iy,iz, 0) = xOff+yOff+zOff;
+  for (int iz = 0; iz < size1D; ++iz) {
+    zOff = iz*size1D*size1D;
+    for (int iy = 0; iy < size1D; ++iy) {
+      yOff = iy*size1D;
+      efMap(iy,iz, 0) = xOff+yOff+zOff;
     }
   }
   
   // +x direction face
-  xOff = order;
-  for (int iz = 0; iz <= order; ++iz) {
-    zOff = iz*(order+1)*(order+1);
-    for (int iy = 0; iy <= order; ++iy) {
-      yOff = iy*(order+1);
-      efToN(iy,iz, 1) = xOff+yOff+zOff;
+  xOff = size1D-1;
+  for (int iz = 0; iz < size1D; ++iz) {
+    zOff = iz*size1D*size1D;
+    for (int iy = 0; iy < size1D; ++iy) {
+      yOff = iy*size1D;
+      efMap(iy,iz, 1) = xOff+yOff+zOff;
     }
   }
   
   // -y direction face
   yOff = 0;
-  for (int iz = 0; iz <= order; ++iz) {
-    zOff = iz*(order+1)*(order+1);
-    for (int ix = 0; ix <= order; ++ix) {
+  for (int iz = 0; iz < size1D; ++iz) {
+    zOff = iz*size1D*size1D;
+    for (int ix = 0; ix < size1D; ++ix) {
       xOff = ix;
-      efToN(ix,iz, 2) = xOff+yOff+zOff;
+      efMap(ix,iz, 2) = xOff+yOff+zOff;
     }
   }
   
   // +y direction face
-  yOff = order*(order+1);
-  for (int iz = 0; iz <= order; ++iz) {
-    zOff = iz*(order+1)*(order+1);
-    for (int ix = 0; ix <= order; ++ix) {
+  yOff = (size1D-1)*size1D;
+  for (int iz = 0; iz < size1D; ++iz) {
+    zOff = iz*size1D*size1D;
+    for (int ix = 0; ix < size1D; ++ix) {
       xOff = ix;
-      efToN(ix,iz, 3) = xOff+yOff+zOff;
+      efMap(ix,iz, 3) = xOff+yOff+zOff;
     }
   }
   
   // -z direction face
   zOff = 0;
-  for (int iy = 0; iy <= order; ++iy) {
-    yOff = iy*(order+1);
-    for (int ix = 0; ix <= order; ++ix) {
+  for (int iy = 0; iy < size1D; ++iy) {
+    yOff = iy*size1D;
+    for (int ix = 0; ix < size1D; ++ix) {
       xOff = ix;
-      efToN(ix,iy, 4) = xOff+yOff+zOff;
+      efMap(ix,iy, 4) = xOff+yOff+zOff;
     }
   }
   
   // +z direction face
-  zOff = order*(order+1)*(order+1);
-  for (int iy = 0; iy <= order; ++iy) {
-    yOff = iy*(order+1);
-    for (int ix = 0; ix <= order; ++ix) {
+  zOff = (size1D-1)*size1D*size1D;
+  for (int iy = 0; iy < size1D; ++iy) {
+    yOff = iy*size1D;
+    for (int ix = 0; ix < size1D; ++ix) {
       xOff = ix;
-      efToN(ix,iy, 5) = xOff+yOff+zOff;
+      efMap(ix,iy, 5) = xOff+yOff+zOff;
     }
   }
   
   // Re-organize face nodes so they are accessible by one index
-  nFNodes = (order+1)*(order+1);
-  efToN.resize(nFNodes, N_FACES);
-  
-  // For fluxes, we care about soln on nodes at face and on neighbor's nodes at face
-  // For every element k, face i, face node iFN:
-  // My node @: soln(efToN(iFN, i), :, k)
-  // Neighbor's node @: soln(efToN(iFN, eToF(i,k)), :, eToE(i,k))
+  int tempFNodes = size1D*size1D;
+  efMap.resize(tempFNodes, N_FACES);
+  return tempFNodes;
   
 }
 

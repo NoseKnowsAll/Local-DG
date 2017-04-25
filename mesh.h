@@ -56,6 +56,7 @@ public:
   Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
   Mesh(const Mesh& other);
   
+  /** Initialize global nodes from solver's Chebyshev nodes */
   void setupNodes(const darray& chebyNodes, int _order);
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
@@ -85,6 +86,8 @@ public:
   int nNodes;
   /** Local number of DG nodes per face of an element */
   int nFNodes;
+  /** Local number of DG quadrature points per face of an element */
+  int nFQNodes;
   /**
      True coordinates of chebyshev nodes for each element:
      For every element k, node i,
@@ -131,6 +134,25 @@ public:
      efToN(:, i) = local node IDs of nodes on face i
   */
   iarray efToN;
+  
+  /**
+     element-face-to-quadrature-point map:
+     For every face i (same across all elements), 
+     efToQ(:, i) = local quad IDs of quadrature points on face i
+  */
+  iarray efToQ;
+
+private:
+
+  /**
+     Initialize face maps for a given number of nodes.
+     Assumes that each face is a square with exactly size1D nodes per dimension.
+     
+     For every element k, face i, face node iFN:
+     My node @: soln(efMap(iFN, i), :, k)
+     Neighbor's node @: soln(efMap(iFN, eToF(i,k)), :, eToE(i,k))
+  */
+  int initFaceMap(iarray& efMap, int size1D);
   
 };
 
