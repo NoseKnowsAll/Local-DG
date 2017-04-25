@@ -45,10 +45,8 @@ Mesh::Mesh() : Mesh{10,10,10} {}
 
 Mesh::Mesh(int nx, int ny, int nz) : Mesh{nx, ny, nz, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}} {}
 
-Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) : Mesh{1, nx, ny, nz, _botLeft, _topRight} {}
-
 /** Main constructor */
-Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) :
+Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) :
   nElements{nx*ny*nz},
   nVertices{(nx+1)*(ny+1)*(nz+1)},
   botLeft{_botLeft},
@@ -56,7 +54,7 @@ Mesh::Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Poin
   minDX{},
   minDY{},
   minDZ{},
-  order{_order},
+  order{},
   nNodes{},
   nFNodes{},
   nFQNodes{},
@@ -213,7 +211,7 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   nFNodes = initFaceMap(efToN, order+1);
   
   // quadrature points per face
-  int nQ = (int)std::ceil((order+1)/2.0);
+  int nQ = (int)std::ceil(order+1/2.0);
   nFQNodes = initFaceMap(efToQ, nQ);
 
 }

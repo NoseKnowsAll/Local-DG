@@ -53,7 +53,6 @@ public:
   Mesh();
   Mesh(int nx, int ny, int nz);
   Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
-  Mesh(int _order, int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
   Mesh(const Mesh& other);
   
   /** Initialize global nodes from solver's Chebyshev nodes */

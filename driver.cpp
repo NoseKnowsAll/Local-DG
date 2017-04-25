@@ -9,10 +9,13 @@
 /** Main driver function */
 int main(int argc, char *argv[]) {
   
-  Mesh mesh{};
-  //std::cout << mesh << std::endl;
+  Point botLeft{-1,-1,-1};
+  Point topRight{1,1,1};
+  Mesh mesh{1,1,1, botLeft, topRight};
   
-  int p = 2;
+  //Mesh mesh{};
+  
+  int p = 8;
   double tf = 1.0;
   Solver dgSolver{p, tf, mesh};
   

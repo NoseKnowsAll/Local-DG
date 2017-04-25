@@ -69,6 +69,28 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   // Compute local matrices
   precomputeLocalMatrices();
   
+  // TODO: debugging
+  std::cout << "initial u = " << u << std::endl;
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    // test = -Sel_l*u
+    darray test{dofs, nStates, mesh.nElements};
+    
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
+		dofs, nStates*mesh.nElements, dofs, -1.0, &Sels(0,0,l), dofs,
+		u.data(), dofs, 0.0, test.data(), dofs);
+    
+    // test = Mel\test
+    MKL_INT ipiv[dofs];
+    int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, nStates*mesh.nElements, 
+			     Mel.data(), dofs, ipiv, test.data(), dofs);
+    
+    int index = 2*(order+1)*(order+1)+2*(order+1);
+    std::cout << "approximation to Du_x_" << l << " = " << darray{&test(index), order+1} << std::endl;
+    std::cout << "\n\n\n\n" << std::endl;
+  }
+
+  exit(0);
+  
 }
 
 /** Precomputes all the interpolation matrices used by Local DG method */
@@ -99,9 +121,8 @@ void Solver::precomputeInterpMatrices() {
     exit(-1);
   
   darray uInterp{nQ3D, nStates, mesh.nElements};
-  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQ3D, nStates*mesh.nElements, dofs, 1.0, Interp3D.data(), dofs,
-	      u.data(), dofs, 0.0, uInterp.data(), nQ3D);
+  darray uInterp2D{Interp2D.size(0), nStates, Mesh::N_FACES, mesh.nElements};
+  interpolateU(u, uInterp2D, uInterp);
   
   // Scales and translates quadrature nodes into each element
   darray globalQuads{Mesh::DIM, nQ3D, mesh.nElements};
@@ -118,10 +139,91 @@ void Solver::precomputeInterpMatrices() {
     }
   }
   
-  success = initXYZVFile("output/xyzuInterp.txt", "uInterp");
+  success = initXYZVFile("output/xyzuInterp.txt", "uInterp3D");
   if (!success)
     exit(-1);
   success = exportToXYZVFile("output/xyzuInterp.txt", globalQuads, uInterp);
+  if (!success)
+    exit(-1);
+  
+  // Scales and translates quadrature nodes into each element
+  int size1D = (int)std::ceil(order+1/2.0);
+  darray globalQuads2D{Mesh::DIM, size1D, size1D, Mesh::N_FACES, mesh.nElements};
+  for (int k = 0; k < mesh.nElements; ++k) {
+    darray botLeft{&mesh.vertices(0, mesh.eToV(0, k)), Mesh::DIM};
+    darray topRight{&mesh.vertices(0, mesh.eToV(7, k)), Mesh::DIM};
+    
+    // -x direction face
+    for (int iz = 0; iz < size1D; ++iz) {
+      for (int iy = 0; iy < size1D; ++iy) {
+	globalQuads2D(0,iy,iz, 0,k) = -1.0;
+	globalQuads2D(1,iy,iz, 0,k) = xQ2D(0,iy,iz);
+	globalQuads2D(2,iy,iz, 0,k) = xQ2D(1,iy,iz);
+      }
+    }
+  
+    // +x direction face
+    for (int iz = 0; iz < size1D; ++iz) {
+      for (int iy = 0; iy < size1D; ++iy) {
+	globalQuads2D(0,iy,iz, 1,k) = 1.0;
+	globalQuads2D(1,iy,iz, 1,k) = xQ2D(0,iy,iz);
+	globalQuads2D(2,iy,iz, 1,k) = xQ2D(1,iy,iz);
+      }
+    }
+    
+    // -y direction face
+    for (int iz = 0; iz < size1D; ++iz) {
+      for (int ix = 0; ix < size1D; ++ix) {
+	globalQuads2D(0,ix,iz, 2,k) = xQ2D(0,ix,iz);
+	globalQuads2D(1,ix,iz, 2,k) = -1.0;
+	globalQuads2D(2,ix,iz, 2,k) = xQ2D(1,ix,iz);
+      }
+    }
+    
+    // +y direction face
+    for (int iz = 0; iz < size1D; ++iz) {
+      for (int ix = 0; ix < size1D; ++ix) {
+	globalQuads2D(0,ix,iz, 3,k) = xQ2D(0,ix,iz);
+	globalQuads2D(1,ix,iz, 3,k) = 1.0;
+	globalQuads2D(2,ix,iz, 3,k) = xQ2D(1,ix,iz);
+      }
+    }
+    
+    // -z direction face
+    for (int iy = 0; iy < size1D; ++iy) {
+      for (int ix = 0; ix < size1D; ++ix) {
+	globalQuads2D(0,ix,iy, 4,k) = xQ2D(0,ix,iy);
+	globalQuads2D(1,ix,iy, 4,k) = xQ2D(1,ix,iy);
+	globalQuads2D(2,ix,iy, 4,k) = -1.0;
+      }
+    }
+    
+    // +z direction face
+    for (int iy = 0; iy < size1D; ++iy) {
+      for (int ix = 0; ix < size1D; ++ix) {
+	globalQuads2D(0,ix,iy, 5,k) = xQ2D(0,ix,iy);
+	globalQuads2D(1,ix,iy, 5,k) = xQ2D(1,ix,iy);
+	globalQuads2D(2,ix,iy, 5,k) = 1.0;
+      }
+    }
+    
+    for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
+      for (int iy = 0; iy < size1D; ++iy) {
+	for (int ix = 0; ix < size1D; ++ix) {
+	  for (int l = 0; l < Mesh::DIM; ++l) {
+	    // amount in [0,1] to scale lth dimension
+	    double scale = .5*(globalQuads2D(l,ix,iy,iF,k)+1.0);
+	    globalQuads2D(l,ix,iy,iF,k) = botLeft(l)+scale*(topRight(l)-botLeft(l));
+	  }
+	}
+      }
+    }
+  }
+  
+  success = initXYZVFile("output/xyzuInterp2D.txt", "uInterp2D");
+  if (!success)
+    exit(-1);
+  success = exportToXYZVFile("output/xyzuInterp2D.txt", globalQuads2D, uInterp2D);
   if (!success)
     exit(-1);
   
@@ -187,15 +289,14 @@ void Solver::precomputeLocalMatrices() {
   double Jacobian = alpha(0)*alpha(1)*alpha(2);
   Mel.realloc(dofs,dofs);
   cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-	      dofs, dofs, sizeQ, Jacobian, polyquad.data(), sizeQ, 
+	      dofs, dofs, sizeQ, Jacobian, polyQuad.data(), sizeQ, 
 	      phiQ.data(), sizeQ, 0.0, Mel.data(), dofs);
   
   
-  // TODO: currently cond(Mel) = 360 Inverse of Mel blows up?
-  std::cout << "Mel = [" << std::endl;
-  std::cout << Mel << std::endl;
-  std::cout << "];" << std::endl;
-  std::cout << "Mel = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
+  //std::cout << "Mel = [" << std::endl;
+  //std::cout << Mel << std::endl;
+  //std::cout << "];" << std::endl;
+  //std::cout << "Mel = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
   
   // TODO: We should also precompute inv(Mel) right here?
   
@@ -208,6 +309,11 @@ void Solver::precomputeLocalMatrices() {
 		polyQuad.data(), sizeQ, 0.0, &Sels(0,0,l), dofs);
   }
   
+  //std::cout << "Sels = [" << std::endl;
+  //std::cout << Sels << std::endl;
+  //std::cout << "];" << std::endl;
+  //std::cout << "Sels = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
+  
   // Initialize K matrices = dx_l(phi_i)*weights
   Kels.realloc(sizeQ,dofs,Mesh::DIM);
   for (int l = 0; l < Mesh::DIM; ++l) {
@@ -218,6 +324,14 @@ void Solver::precomputeLocalMatrices() {
       }
     }
   }
+
+  std::cout << "wq = " << wQ << std::endl;
+  std::cout << "xq = " << xQ << std::endl;
+  
+  //std::cout << "Kels = [" << std::endl;
+  //std::cout << Kels << std::endl;
+  //std::cout << "];" << std::endl;
+  //std::cout << "Kels = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
   
   // Initialize 2D mass matrix for use along faces
   darray xQ2D, wQ2D;
@@ -261,7 +375,11 @@ void Solver::initialCondition() {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    
-	    u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0))/(2*sigmaSq));
+	    //u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0))/(2*sigmaSq));
+	    //u(vID, iS, k) = std::sin(M_PI*(x+1.0));
+	    u(vID, iS, k) = std::sin(M_PI*(x+1.0))*std::sin(M_PI*(y+1.0))*std::sin(M_PI*(z+1.0));
+	    u(vID, iS, k)/= .7957*.7957;
+	    //u(vID, iS, k) = std::cos(M_PI*(x+1.0))*std::cos(M_PI*(y+1.0))*std::cos(M_PI*(z+1.0));
 	  }
 	}
       }
@@ -315,12 +433,12 @@ void Solver::dgTimeStep() {
     
     // TODO: Debugging
     //exportToSSVFile("output/u.txt", u, dofs, nStates*mesh.nElements);
-    if (iStep % 100000 == 0) {
-      std::cout << "saving snapshot...\n";
-      bool success = initXYZVFile("output/xyzu.txt", iStep/100000, "u");
+    if (iStep % 10 == 0) {
+      std::cout << "Saving snapshot " << iStep/10 << "...\n";
+      bool success = initXYZVFile("output/xyzu.txt", iStep/10, "u");
       if (!success)
 	exit(-1);
-      success = exportToXYZVFile("output/xyzu.txt", iStep/100000, mesh.globalCoords, u);
+      success = exportToXYZVFile("output/xyzu.txt", iStep/10, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
       
