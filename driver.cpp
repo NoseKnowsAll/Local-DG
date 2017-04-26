@@ -18,7 +18,8 @@ int main(int argc, char *argv[]) {
   
   int p = 2;
   double tf = 1.0;
-  Solver dgSolver{p, tf, mesh};
+  int dtSnaps = 30;
+  Solver dgSolver{p, dtSnaps, tf, mesh};
   
   dgSolver.dgTimeStep();
   

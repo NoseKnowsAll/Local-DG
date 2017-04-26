@@ -1,14 +1,15 @@
 #include "solver.h"
 
 /** Default constructor */
-Solver::Solver() : Solver{2, 1.0, Mesh{}} { }
+Solver::Solver() : Solver{2, 10, 1.0, Mesh{}} { }
 
 /** Main constructor */
-Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
+Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   mesh{_mesh},
   tf{_tf},
   dt{},
   timesteps{},
+  dtSnaps{_dtSnaps},
   order{_p},
   dofs{},
   refNodes{},
@@ -17,7 +18,6 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   Mipiv{},
   Sels{},
   Kels{},
-  M2D{},
   Interp2D{},
   Interp3D{},
   u{},
@@ -274,11 +274,6 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  //std::cout << "Kels = [" << std::endl;
-  //std::cout << Kels << std::endl;
-  //std::cout << "];" << std::endl;
-  //std::cout << "Kels = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
-  
   // Initialize 2D mass matrix for use along faces
   darray xQ2D, wQ2D;
   int fSizeQ = gaussQuad2D(2*order, xQ2D, wQ2D);
@@ -291,14 +286,6 @@ void Solver::precomputeLocalMatrices() {
 	Kels2D(iQ, iDofs, l) = Interp2D(iQ,iDofs)*wQ2D(iQ)*scaleL;
       }
     }
-  }
-  
-  M2D.realloc(fDofs,fDofs,Mesh::DIM);
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    double scaleL = Jacobian/alpha(l);
-    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		fDofs,fDofs,fSizeQ, scaleL, Kels2D.data(), fSizeQ,
-		Interp2D.data(), fSizeQ, 0.0, &M2D(0,0,l), fDofs);
   }
   
 }
@@ -374,16 +361,16 @@ void Solver::dgTimeStep() {
   for (int iStep = 0; iStep < timesteps; ++iStep) {
     std::cout << "time = " << iStep*dt << std::endl;
     
-    if (iStep % 10 == 0) {
-      std::cout << "Saving snapshot " << iStep/10 << "...\n";
-      bool success = initXYZVFile("output/xyzu.txt", iStep/10, "u");
+    if (iStep % dtSnaps == 0) {
+      std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
+      bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u");
       if (!success)
 	exit(-1);
-      success = exportToXYZVFile("output/xyzu.txt", iStep/10, mesh.globalCoords, u);
+      success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
       
-      if (iStep/10 == 10) {
+      if (iStep/dtSnaps == 10) {
 	std::cout << "exiting for debugging purposes...\n";
 	exit(0);
       }
@@ -407,9 +394,6 @@ void Solver::dgTimeStep() {
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
-	    if (iK == 0) {
-	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << "\n";
-	    }
 	  }
 	}
       }

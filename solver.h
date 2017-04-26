@@ -19,6 +19,7 @@ private:
   double tf;
   double dt;
   long timesteps;
+  int dtSnaps;
   
   int order;
   int dofs;
@@ -29,7 +30,6 @@ private:
   darray Sels;
   darray Kels;
   darray Kels2D;
-  darray M2D;
   
   darray Interp2D;
   darray Interp3D;
@@ -70,7 +70,7 @@ private:
   
 public:
   Solver();
-  Solver(int _p, double _tf, const Mesh& _mesh);
+  Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh);
   
   void dgTimeStep();
   
