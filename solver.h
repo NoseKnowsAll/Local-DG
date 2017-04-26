@@ -25,6 +25,7 @@ private:
   darray refNodes;
   int nStates;
   darray Mel;
+  iarray Mipiv;
   darray Sels;
   darray Kels;
   darray Kels2D;

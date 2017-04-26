@@ -14,6 +14,7 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   refNodes{},
   nStates{},
   Mel{},
+  Mipiv{},
   Sels{},
   Kels{},
   M2D{},
@@ -37,22 +38,6 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
   mesh.setupNodes(refNodes, order);
   
-  /* TODO: debugging in MATLAB
-  darray x{dofs, mesh.nElements};
-  darray y{dofs, mesh.nElements};
-  darray z{dofs, mesh.nElements};
-  for (int k = 0; k < mesh.nElements; ++k) {
-    for (int iN = 0; iN < dofs; ++iN) {
-      x(iN,k) = mesh.globalCoords(0, iN,k);
-      y(iN,k) = mesh.globalCoords(1, iN,k);
-      z(iN,k) = mesh.globalCoords(2, iN,k);
-    }
-  }
-  
-  exportToSSVFile("output/x.txt", x, dofs, mesh.nElements);
-  exportToSSVFile("output/y.txt", y, dofs, mesh.nElements);
-  exportToSSVFile("output/z.txt", z, dofs, mesh.nElements);
-  */
   /* TODO: debugging in Paraview
   initXYZVFile("output/xyzu.txt", "u");
   exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
@@ -70,6 +55,10 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   precomputeLocalMatrices();
   
   // TODO: debugging
+  /*
+  initXYZVFile("output/xyzu.txt", "u");
+  exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
+  
   std::cout << "initial u = " << u << std::endl;
   for (int l = 0; l < Mesh::DIM; ++l) {
     // test = -Sel_l*u
@@ -79,17 +68,34 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
 		dofs, nStates*mesh.nElements, dofs, -1.0, &Sels(0,0,l), dofs,
 		u.data(), dofs, 0.0, test.data(), dofs);
     
+    //std::cout << "test = -S_l*u " << test << std::endl;
+    
     // test = Mel\test
-    MKL_INT ipiv[dofs];
-    int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, nStates*mesh.nElements, 
-			     Mel.data(), dofs, ipiv, test.data(), dofs);
+    int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
+			      Mel.data(), dofs, Mipiv.data(), test.data(), dofs);
     
     int index = 2*(order+1)*(order+1)+2*(order+1);
-    std::cout << "approximation to Du_x_" << l << " = " << darray{&test(index), order+1} << std::endl;
+    std::cout << "approximation to Du_x_" << l << " = " << darray{test, order+1} << std::endl;
     std::cout << "\n\n\n\n" << std::endl;
+    
+    switch(l) {
+    case (0):
+      initXYZVFile("output/xyzDux.txt", "Du_x");
+      exportToXYZVFile("output/xyzDux.txt", mesh.globalCoords, test);
+      break;
+    case 1:
+      initXYZVFile("output/xyzDuy.txt", "Du_y");
+      exportToXYZVFile("output/xyzDuy.txt", mesh.globalCoords, test);
+      break;
+    case 2:
+      initXYZVFile("output/xyzDuz.txt", "Du_z");
+      exportToXYZVFile("output/xyzDuz.txt", mesh.globalCoords, test);
+      break;
+    }
+      
+    
   }
-
-  exit(0);
+  */
   
 }
 
@@ -291,14 +297,10 @@ void Solver::precomputeLocalMatrices() {
   cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
 	      dofs, dofs, sizeQ, Jacobian, polyQuad.data(), sizeQ, 
 	      phiQ.data(), sizeQ, 0.0, Mel.data(), dofs);
-  
-  
-  //std::cout << "Mel = [" << std::endl;
-  //std::cout << Mel << std::endl;
-  //std::cout << "];" << std::endl;
-  //std::cout << "Mel = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
-  
-  // TODO: We should also precompute inv(Mel) right here?
+  Mipiv.realloc(dofs);
+  // Mel overwritten with U*D*U'
+  info = LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'U', dofs,
+			Mel.data(), dofs, Mipiv.data());
   
   // Initialize stiffness matrices = integrate(dx_l(phi_i)*phi_j)
   Sels.realloc(dofs,dofs,Mesh::DIM);
@@ -308,11 +310,6 @@ void Solver::precomputeLocalMatrices() {
 		dofs, dofs, sizeQ, scaleL, &dPhiQ(0,0,0,0,l), sizeQ, 
 		polyQuad.data(), sizeQ, 0.0, &Sels(0,0,l), dofs);
   }
-  
-  //std::cout << "Sels = [" << std::endl;
-  //std::cout << Sels << std::endl;
-  //std::cout << "];" << std::endl;
-  //std::cout << "Sels = reshape(Mel, [" << dofs << ", " << dofs << "]);" << std::endl;
   
   // Initialize K matrices = dx_l(phi_i)*weights
   Kels.realloc(sizeQ,dofs,Mesh::DIM);
@@ -324,9 +321,6 @@ void Solver::precomputeLocalMatrices() {
       }
     }
   }
-
-  std::cout << "wq = " << wQ << std::endl;
-  std::cout << "xq = " << xQ << std::endl;
   
   //std::cout << "Kels = [" << std::endl;
   //std::cout << Kels << std::endl;
@@ -375,10 +369,10 @@ void Solver::initialCondition() {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    
-	    //u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0))/(2*sigmaSq));
+	    u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0))/(2*sigmaSq));
 	    //u(vID, iS, k) = std::sin(M_PI*(x+1.0));
-	    u(vID, iS, k) = std::sin(M_PI*(x+1.0))*std::sin(M_PI*(y+1.0))*std::sin(M_PI*(z+1.0));
-	    u(vID, iS, k)/= .7957*.7957;
+	    //u(vID, iS, k) = std::sin(M_PI*(x+1.0))*std::sin(M_PI*(y+1.0))*std::sin(M_PI*(z+1.0));
+	    //u(vID, iS, k)/= .7957*.7957;
 	    //u(vID, iS, k) = std::cos(M_PI*(x+1.0))*std::cos(M_PI*(y+1.0))*std::cos(M_PI*(z+1.0));
 	  }
 	}
@@ -431,8 +425,6 @@ void Solver::dgTimeStep() {
   for (int iStep = 0; iStep < timesteps; ++iStep) {
     std::cout << "time = " << iStep*dt << std::endl;
     
-    // TODO: Debugging
-    //exportToSSVFile("output/u.txt", u, dofs, nStates*mesh.nElements);
     if (iStep % 10 == 0) {
       std::cout << "Saving snapshot " << iStep/10 << "...\n";
       bool success = initXYZVFile("output/xyzu.txt", iStep/10, "u");
@@ -442,11 +434,11 @@ void Solver::dgTimeStep() {
       if (!success)
 	exit(-1);
       
-      /*if (iStep/1000000 == 10) {
+      /*if (iStep/10 == 10) {
 	std::cout << "exiting for debugging purposes...\n";
 	exit(0);
-      }
-      */
+	}*/
+      
     }
     
     // Use RK4 to compute k values at each stage
@@ -533,9 +525,8 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
 		uCurr.data(), dofs, 1.0, &Dus(0,0,0,l), dofs);
     
     // Du_l = Mel\Du_l
-    MKL_INT ipiv[dofs];
-    int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, nStates*mesh.nElements, 
-			     Mel.data(), dofs, ipiv, &Dus(0,0,0,l), dofs);
+    int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
+                             Mel.data(), dofs, Mipiv.data(), &Dus(0,0,0,l), dofs);
     
   }
   
@@ -567,9 +558,8 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   //std::cout << "res = reshape(res, [" << dofs << ", " << nStates*mesh.nElements << "]);" << std::endl;
   
   // ks(:,istage) = Mel\ks(:,istage)
-  MKL_INT ipiv[dofs];
-  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, nStates*mesh.nElements, 
-			   Mel.data(), dofs, ipiv, residual.data(), dofs);
+  int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
+			    Mel.data(), dofs, Mipiv.data(), residual.data(), dofs);
   
   //std::cout << "answer = [" << std::endl;
   //std::cout << residual << std::endl;
@@ -681,8 +671,8 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 	// Must compute nStates of these flux integrals per face
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	    auto uK = uInterp2D(mesh.efToQ(iFQ, iF), iS, iK);
-	    auto uN = uInterp2D(mesh.efToQ(iFQ, nF), iS, nK);
+	    auto uK = uInterp2D(iFQ, iF, iS, iK);
+	    auto uN = uInterp2D(iFQ, nF, iS, nK);
 	    
 	    fStar(iFQ, iS, iF, l) = numericalFluxL(uK, uN, normalK, normalN);
 	  }
@@ -750,8 +740,8 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
       // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
 	for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	  auto uK = uInterp2D(mesh.efToQ(iFQ, iF), iS, iK);
-	  auto uN = uInterp2D(mesh.efToQ(iFQ, nF), iS, nK);
+	  auto uK = uInterp2D(iFQ, iF, iS, iK);
+	  auto uN = uInterp2D(iFQ, nF, iS, nK);
 	  
 	  fStar(iFQ, iS, iF) = numericalFluxC(uK, uN, normalK, normalN);
 	}
@@ -897,13 +887,13 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
       // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
 	for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	  auto uK = uInterp2D(mesh.efToQ(iFQ, iF), iS, iK);
-	  auto uN = uInterp2D(mesh.efToQ(iFQ, nF), iS, nK);
+	  auto uK = uInterp2D(iFQ, iF, iS, iK);
+	  auto uN = uInterp2D(iFQ, nF, iS, nK);
 	  darray DuK{Mesh::DIM};
 	  darray DuN{Mesh::DIM};
 	  for (int l = 0; l < Mesh::DIM; ++l) {
-	    DuK(l) = DuInterp2D(mesh.efToQ(iFQ, iF), iS, iK, l);
-	    DuN(l) = DuInterp2D(mesh.efToQ(iFQ, nF), iS, nK, l);
+	    DuK(l) = DuInterp2D(iFQ, iF, iS, iK, l);
+	    DuN(l) = DuInterp2D(iFQ, nF, iS, nK, l);
 	  }
 	  
 	  fStar(iFQ, iS, iF) = numericalFluxV(uK, uN, DuK, DuN, normalK, normalN);
