@@ -38,11 +38,6 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
   mesh.setupNodes(refNodes, order);
   
-  /* TODO: debugging in Paraview
-  initXYZVFile("output/xyzu.txt", "u");
-  exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
-  END TODO */
-  
   // TODO: DEPENDS ON PDE
   nStates = 1;
   u.realloc(dofs, nStates, mesh.nElements);
@@ -53,49 +48,6 @@ Solver::Solver(int _p, double _tf, const Mesh& _mesh) :
   
   // Compute local matrices
   precomputeLocalMatrices();
-  
-  // TODO: debugging
-  /*
-  initXYZVFile("output/xyzu.txt", "u");
-  exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
-  
-  std::cout << "initial u = " << u << std::endl;
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    // test = -Sel_l*u
-    darray test{dofs, nStates, mesh.nElements};
-    
-    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-		dofs, nStates*mesh.nElements, dofs, -1.0, &Sels(0,0,l), dofs,
-		u.data(), dofs, 0.0, test.data(), dofs);
-    
-    //std::cout << "test = -S_l*u " << test << std::endl;
-    
-    // test = Mel\test
-    int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
-			      Mel.data(), dofs, Mipiv.data(), test.data(), dofs);
-    
-    int index = 2*(order+1)*(order+1)+2*(order+1);
-    std::cout << "approximation to Du_x_" << l << " = " << darray{test, order+1} << std::endl;
-    std::cout << "\n\n\n\n" << std::endl;
-    
-    switch(l) {
-    case (0):
-      initXYZVFile("output/xyzDux.txt", "Du_x");
-      exportToXYZVFile("output/xyzDux.txt", mesh.globalCoords, test);
-      break;
-    case 1:
-      initXYZVFile("output/xyzDuy.txt", "Du_y");
-      exportToXYZVFile("output/xyzDuy.txt", mesh.globalCoords, test);
-      break;
-    case 2:
-      initXYZVFile("output/xyzDuz.txt", "Du_z");
-      exportToXYZVFile("output/xyzDuz.txt", mesh.globalCoords, test);
-      break;
-    }
-      
-    
-  }
-  */
   
 }
 
@@ -370,10 +322,7 @@ void Solver::initialCondition() {
 	    double z = mesh.globalCoords(2,vID,k);
 	    
 	    u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0))/(2*sigmaSq));
-	    //u(vID, iS, k) = std::sin(M_PI*(x+1.0));
-	    //u(vID, iS, k) = std::sin(M_PI*(x+1.0))*std::sin(M_PI*(y+1.0))*std::sin(M_PI*(z+1.0));
-	    //u(vID, iS, k)/= .7957*.7957;
-	    //u(vID, iS, k) = std::cos(M_PI*(x+1.0))*std::cos(M_PI*(y+1.0))*std::cos(M_PI*(z+1.0));
+	    
 	  }
 	}
       }
@@ -434,10 +383,10 @@ void Solver::dgTimeStep() {
       if (!success)
 	exit(-1);
       
-      /*if (iStep/10 == 10) {
+      if (iStep/10 == 10) {
 	std::cout << "exiting for debugging purposes...\n";
 	exit(0);
-	}*/
+      }
       
     }
     
@@ -514,7 +463,6 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   
   // First solve for the Dus in each dimension according to:
   // Du_l = Mel\(-S_l*u + fluxesL(u))
-  /*
   Dus.fill(0.0);
   localDGFlux(uInterp2D, Dus);
   for (int l = 0; l < Mesh::DIM; ++l) {
@@ -532,7 +480,6 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   
   // Interpolate Dus once
   interpolateDus(Dus, DuInterp2D, DuInterp3D);
-  */
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // ks(:,istage) = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
@@ -541,7 +488,8 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   residual.fill(0.0);
   
   convectDGFlux(uInterp2D, residual);
-  //viscousDGFlux(uInterp2D, DuInterp2D, residual); // TODO: uncomment this
+  // TODO: ensure this works 
+  viscousDGFlux(uInterp2D, DuInterp2D, residual);
   
   // ks(:,istage) = -Fc(u)-Fv(u,Dus)
   cblas_dscal(dofs*nStates*mesh.nElements, -1.0, residual.data(), 1);
@@ -550,7 +498,8 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   convectDGVolume(uInterp3D, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  //viscousDGVolume(uInterp3D, DuInterp3D, residual); // TODO: uncomment this
+  // TODO: ensure this works
+  viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
   //std::cout << "res = [" << std::endl;
   //std::cout << residual << std::endl;
@@ -607,7 +556,7 @@ void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInter
    Interpolates Dus on faces to 2D quadrature points and stores in DuInterp2D.
    Interpolates Dus onto 3D quadrature points and stores in DuInterp3D.
 */
-void Solver::interpolateDu(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const {
+void Solver::interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const {
   
   // First grab u on faces and pack into array uOnFaces
   int nFN = mesh.nFNodes;
@@ -641,8 +590,8 @@ void Solver::interpolateDu(const darray& Dus, darray& DuInterp2D, darray& DuInte
 
 /**
    Local DG Flux: Computes Fl(u) for use in the local DG formulation of second-order terms.
-   Uses a Lax-Friedrichs formulation for the flux term. TODO: Shouldn't we be using downwind?
-   Updates residuals arrays with added flux
+   Uses a downwind formulation for the flux term. 
+   Updates residuals arrays with added flux.
 */
 void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
   
@@ -700,21 +649,23 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 /** Evaluates the local DG flux function for this PDE at a given value uHere */
 inline double Solver::numericalFluxL(double uK, double uN, double normalK, double normalN) const {
   
-  // TODO: f(u) = u right now. This depends on PDE!
   auto fK = uK;
   auto fN = uN;
-  // TODO: This appears to also be the Roe A value?
-  double C = std::abs((fN-fK)/(uN-uK));
   
-  return (fK+fN)/2.0 + (C/2.0)*(uN*normalN + uK*normalK);
+  // TODO: In Lax-Friedrichs formulation, this appears to also be the Roe A value?
+  //double C = std::abs((fN-fK)/(uN-uK));
+  //double result = (fK+fN)/2.0 + (C/2.0)*(uN*normalN + uK*normalK);
+  
+  double result = (normalK < 0.0 ? fK : fN)*normalK;
+  return result;
   
 }
 
 /**
    Convect DG Flux: Computes Fc(u) for use in the Local DG formulation of the 
    1st-order convection term.
-   Uses upwinding for the numerical flux. TODO: Use Per's Roe solver.
-   Updates residual variable with added flux
+   Uses upwinding for the numerical flux. 
+   Updates residual variable with added flux.
 */
 void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
   
@@ -762,50 +713,6 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
     }
     
   }
-  
-  /*
-  // Loop over all elements
-  for (int iK = 0; iK < mesh.nElements; ++iK) {
-    
-    // Initialize flux along faces
-    darray fStar{nFN, nStates, Mesh::N_FACES}; // TODO: should we move this out of for loop
-    darray faceContributions{nFN, nStates, Mesh::N_FACES};
-    
-    // For every face, compute flux = integrate over face (fstar*phi_i)
-    for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
-      
-      auto nF = mesh.eToF(iF, iK);
-      auto nK = mesh.eToE(iF, iK);
-      
-      darray normalK{&mesh.normals(0, iF, iK), 3};
-      darray normalN{&mesh.normals(0, nF, nK), 3};
-      
-      // Must compute nStates of these flux integrals per face
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iFN = 0; iFN < nFN; ++iFN) {
-	  auto uK = uCurr(mesh.efToN(iFN, iF), iS, iK);
-	  auto uN = uCurr(mesh.efToN(iFN, nF), iS, nK);
-	  
-	  fStar(iFN, iS, iF) = numericalFluxC(uK, uN, normalK, normalN);
-	}
-      }
-      
-      // Flux contribution = M2D*fstar
-      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-		  nFN, nStates, nFN, 1.0, &M2D(0,0,iF/2), nFN, 
-		  &fStar(0,0,iF), nFN, 
-		  0.0, &faceContributions(0,0,iF), nFN);
-      
-      // Add up face contributions into global residual array
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iFN = 0; iFN < nFN; ++iFN) {
-	  residual(mesh.efToN(iFN,iF), iS, iK) += faceContributions(iFN, iS, iF);
-	}
-      }
-    }
-    
-  }
-  */
   
 }
 
@@ -954,7 +861,6 @@ inline double Solver::numericalFluxV(double uK, double uN, const darray& DuK, co
   
   double result = 0.0;
   
-  // TODO: fv(u) = 0 right now. This depends on PDE!
   for (int l = 0; l < Mesh::DIM; ++l) {
     auto fK = fluxV(uK, DuK, l);
     auto fN = fluxV(uN, DuN, l);
@@ -968,15 +874,19 @@ inline double Solver::numericalFluxV(double uK, double uN, const darray& DuK, co
 
 /** Evaluates the actual viscosity flux function for the PDE */
 inline double Solver::fluxV(double uK, const darray& DuK, int l) const {
+  double eps = 1e-2;
+  // TODO: fv(u,Du) = a*u-eps*sum(DuK) right now. This depends on PDE!
+  // TODO: change this to convection diffusion
   switch(l) {
   case 0:
-    return 0.0;
+    return - eps*a[l]*DuK(l);
     break;
   case 1:
-    return 0.0;
+    return - eps*a[l]*DuK(l);
+      //(DuK(0) + DuK(1) + DuK(2));
     break;
   case 2:
-    return 0.0;
+    return - eps*a[l]*DuK(l);
     break;
   default:
     std::cerr << "How the hell...?" << std::endl;

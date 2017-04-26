@@ -49,7 +49,7 @@ private:
 	      darray& ks, int istage) const;
   
   void interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D) const;
-  void interpolateDu(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const;
+  void interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const;
   
   void localDGFlux(const darray& uInterp2D, darray& residuals) const;
   inline double numericalFluxL(double uK, double uN, 
