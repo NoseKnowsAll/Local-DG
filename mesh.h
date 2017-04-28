@@ -132,24 +132,31 @@ public:
   iarray ieToE;
   
   /**
+     MPI boundary element-to-element map:
+     For every MPI boundary element k, in MPI face i,
+     mpibetoE(k, i) = element number in MPI-local array of neighbor this MPI task controls
+  */
+  iarray mpibetoE;
+  
+  /**
      element-to-element neighbor map:
      For every element k, face i
-     eToE(i, k) = element number of neighbor in ith direction
+     eToE(i, k) = element number of neighbor on ith face (includes ghost elements)
      3D: -x,+x,-y,+y,-z,+z directions
   */
   iarray eToE;
-  /**
-     normals at each face of each element:
-     For every element k, face i
-     normals(:,i,k) = outward normal vector of face i
-  */
-  darray normals;
   /**
      element-to-faces neighbor map:
      For every element k, face i, 
      eToF(i, k) = face number on neighbor's face array
   */
   iarray eToF;
+  /**
+     normals at each face of each element:
+     For every element k, face i
+     normals(:,i,k) = outward normal vector of face i
+  */
+  darray normals;
   
   /**
      element-face-to-node map:

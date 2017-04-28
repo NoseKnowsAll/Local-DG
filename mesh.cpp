@@ -69,9 +69,10 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   eToV{},
   beToE{},
   ieToE{},
+  mpibetoE{},
   eToE{},
-  normals{},
   eToF{},
+  normals{},
   efToN{},
   efToQ{}
 {
@@ -184,96 +185,119 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
     }
   }
   
-  // Initialize element-to-face arrays
-  eToE.realloc(N_FACES, nElements+nGElements);
-  eToF.realloc(N_FACES, nElements+nGElements);
+  // Initialize element-to-face arrays and MPI boundary element map
+  eToE.realloc(N_FACES, nElements);
+  eToF.realloc(N_FACES, nElements);
+  mpibetoE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
   
-  // Modulo enforces periodic boundary conditions
+  iarray faceOffsets{MPIUtil::N_FACES};
+  int offset = 0;
+  for (int l = 0; l < MPIUtil::N_FACES; ++l) {
+    faceOffsets(l) = nElements+offset;
+    offset += mpiNBElems(l);
+  }
+  
+  // Periodic boundary conditions enforced automatically through MPI cartesian topology
   for (int iz = 0; iz < localNs[2]; ++iz) {
     
-    int face4 = 0;
-    int face5 = 0;
+    bool face4 = false;
+    bool face5 = false;
     int izM = iz-1;
     if (izM < 0) { // face 4
-      face4 = 1;
+      face4 = true;
     }
     izM *= localNs[0]*localNs[1];
     int izP = iz+1;
     if (izP >= localNs[2]) { // face 5
-      face5 = 1;
+      face5 = true;
     }
     izP *= localNs[0]*localNs[1];
     int iz0 = iz*localNs[0]*localNs[1];
     
     for (int iy = 0; iy < localNs[1]; ++iy) {
       
-      int face2 = 0;
-      int face3 = 0;
+      bool face2 = false;
+      bool face3 = false;
       int iyM = iy-1;
       if (iyM < 0) { // face 2
-	face2 = 1;
+	face2 = true;
       }
       iyM *= localNs[0];
       
       int iyP = iy+1;
       if (iyP >= localNs[1]) { // face 3
-	face3 = 1;
+	face3 = true;
       }
       iyP *= localNs[0];
       int iy0 = iy*localNs[0];
       
       for (int ix = 0; ix < localNs[0]; ++ix) {
-	int face0 = 0;
-	int face1 = 0;
+	bool face0 = false;
+	bool face1 = false;
 	int ixM = ix-1;
 	if (ixM < 0) { // face 0
-	  face0 = 1;
+	  face0 = true;
 	}
 	int ixP = ix+1;
 	if (ixP >= localNs[0]) { // face 1
-	  face1 = 1;
+	  face1 = true;
 	}
 	int ix0 = ix;
 	
 	int eIndex = ix0 + iy0 + iz0;
-	// TODO: this is not complete yet
+	
 	// Neighbor elements in -x,+x,-y,+y,-z,+z directions stored in faces
 	if (face0) {
-	  
+	  int ghostNum = iz*localNs[1]+iy;
+	  eToE(0, eIndex) = faceOffsets(0)+ghostNum;
+	  mpibetoE(ghostNum, 0) = eIndex;
 	}
 	else {
 	  eToE(0, eIndex) = ixM+iy0+iz0;
 	}
 	
 	if (face1) {
-
+	  int ghostNum = iz*localNs[1]+iy;
+	  eToE(1, eIndex) = faceOffsets(1)+ghostNum;
+	  mpibetoE(ghostNum, 1) = eIndex;
 	}
 	else {
 	  eToE(1, eIndex) = ixP+iy0+iz0;
 	}
 	
 	if (face2) {
-	  
+	  int ghostNum = iz*localNs[0]+ix;
+	  eToE(2, eIndex) = faceOffsets(2)+ghostNum;
+	  mpibetoE(ghostNum, 2) = eIndex;
 	}
 	else {
 	  eToE(2, eIndex) = ix0+iyM+iz0;
 	}
 	
 	if (face3) {
-
+	  int ghostNum = iz*localNs[0]+ix;
+	  eToE(3, eIndex) = faceOffsets(3)+ghostNum;
+	  mpibetoE(ghostNum, 3) = eIndex;
 	}
 	else {
 	  eToE(3, eIndex) = ix0+iyP+iz0;
 	}
-
+	
 	if (face4) {
-
+	  int ghostNum = iy*localNs[0]+ix;
+	  eToE(4, eIndex) = faceOffsets(4)+ghostNum;
+	  mpibetoE(ghostNum, 4) = eIndex;
 	}
 	else {
 	  eToE(4, eIndex) = ix0+iy0+izM;
 	}
-
+	
 	if (face5) {
+	  int ghostNum = iy*localNs[0]+ix;
+	  eToE(5, eIndex) = faceOffsets(5)+ghostNum;
+	  mpibetoE(ghostNum, 5) = eIndex;
+	}
+	else {
 	  eToE(5, eIndex) = ix0+iy0+izP;
 	}
 	
@@ -340,9 +364,10 @@ Mesh::Mesh(const Mesh& other) :
   eToV{other.eToV},
   beToE{other.beToE},
   ieToE{other.ieToE},
+  mpibetoE{other.mpibetoE},
   eToE{other.eToE},
-  normals{other.normals},
   eToF{other.eToF},
+  normals{other.normals},
   efToN{other.efToN},
   efToQ{other.efToQ}
 { }
@@ -375,6 +400,7 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   // quadrature points per face
   int nQ = (int)std::ceil(order+1/2.0);
   nFQNodes = initFaceMap(efToQ, nQ);
+  mpi.initDatatype(nFQNodes);
 
 }
 

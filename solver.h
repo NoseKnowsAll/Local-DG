@@ -15,6 +15,7 @@ class Solver {
 private:
   
   Mesh mesh;
+  MPIUtil mpi;
   
   double tf;
   double dt;

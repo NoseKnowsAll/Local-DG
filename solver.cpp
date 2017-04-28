@@ -6,6 +6,7 @@ Solver::Solver() : Solver{2, 10, 1.0, Mesh{}} { }
 /** Main constructor */
 Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   mesh{_mesh},
+  mpi{_mesh.mpi},
   tf{_tf},
   dt{},
   timesteps{},
@@ -37,6 +38,7 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   chebyshev3D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
   mesh.setupNodes(refNodes, order);
+  mpi.initDatatype(mesh.nFQNodes);
   
   // TODO: DEPENDS ON PDE
   nStates = 1;
@@ -472,7 +474,6 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   residual.fill(0.0);
   
   convectDGFlux(uInterp2D, residual);
-  // TODO: ensure this works 
   viscousDGFlux(uInterp2D, DuInterp2D, residual);
   
   // ks(:,istage) = -Fc(u)-Fv(u,Dus)
@@ -482,7 +483,6 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   convectDGVolume(uInterp3D, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  // TODO: ensure this works
   viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
   //std::cout << "res = [" << std::endl;
@@ -857,7 +857,6 @@ inline double Solver::numericalFluxV(double uK, double uN, const darray& DuK, co
 inline double Solver::fluxV(double uK, const darray& DuK, int l) const {
   double eps = 1e-2;
   // TODO: fv(u,Du) = a*u-eps*sum(DuK) right now. This depends on PDE!
-  // TODO: change this to convection diffusion
   switch(l) {
   case 0:
     return - eps*a[l]*DuK(l);
