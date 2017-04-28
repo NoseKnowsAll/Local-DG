@@ -43,12 +43,18 @@ inline bool operator!=(const Point& lhs, const Point& rhs) {
 /** Mesh Functionality */
 Mesh::Mesh() : Mesh{10,10,10} {}
 
-Mesh::Mesh(int nx, int ny, int nz) : Mesh{nx, ny, nz, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}} {}
+Mesh::Mesh(int nx, int ny, int nz) : Mesh{nx, ny, nz, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}, MPIUtil{}} {}
+
+Mesh::Mesh(const MPIUtil& _mpi) : Mesh{10, 10, 10, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}, _mpi} {}
 
 /** Main constructor */
-Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight) :
-  nElements{nx*ny*nz},
-  nVertices{(nx+1)*(ny+1)*(nz+1)},
+Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi) :
+  mpi{_mpi},
+  nElements{},
+  nIElements{},
+  nBElements{},
+  mpiNBElems{},
+  nVertices{},
   botLeft{_botLeft},
   topRight{_topRight},
   minDX{},
@@ -61,6 +67,8 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   globalCoords{},
   vertices{},
   eToV{},
+  beToE{},
+  ieToE{},
   eToE{},
   normals{},
   eToF{},
@@ -68,21 +76,62 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   efToQ{}
 {
   
+  // Initialize my position in MPI topology
+  int globalNs[MPIUtil::DIM] = {nx, ny, nz};
+  int localNs[MPIUtil::DIM];
+  int localSs[MPIUtil::DIM];
+  int localEs[MPIUtil::DIM];
+  for (int l = 0; l < MPIUtil::DIM; ++l) {
+    
+    localNs[l] = static_cast<int>(std::floor(globalNs[l] % mpi.nps[l]));
+    if(mpi.coords[l] < globalNs[l] % mpi.nps[l]) {
+      localNs[l]++;
+      localSs[l] = mpi.coords[l] * localNs[l];
+      localEs[l] = (mpi.coords[l] + 1)*localNs[l] - 1;
+    } else {
+      localSs[l] = (globalNs[l] % mpi.nps[l])*(localNs[l]+1) 
+	+ (mpi.coords[l]     - (globalNs[l]%mpi.nps[l]))*localNs[l];
+      localEs[l] = (globalNs[l] % mpi.nps[l])*(localNs[l]+1) 
+	+ (mpi.coords[l] + 1 - (globalNs[l]%mpi.nps[l]))*localNs[l] - 1;
+    }
+    
+  }
+  
+  // Distinguishing between boundary and interior elements
+  nElements  = localNs[0]*localNs[1]*localNs[2];
+  nIElements = (localNs[0]-2)*(localNs[1]-2)*(localNs[2]-2);
+  nBElements = nElements - nIElements;
+  nGElements = 0;
+  mpiNBElems.realloc(MPIUtil::N_FACES);
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    mpiNBElems(iF) = 1;
+    for (int l = 0; l < MPIUtil::DIM; ++l) {
+      if (l != iF/2) {
+	mpiNBElems(iF) *= localNs[l];
+      }
+    }
+    nGElements += mpiNBElems(iF);
+  }
+  
+  
+  nVertices  = (localNs[0]+1)*(localNs[1]+1)*(localNs[2]+1);
+  
   // Initialize vertices
-  vertices.realloc(DIM, nVertices);
-  for (int iz = 0; iz <= nz; ++iz) {
+  vertices.realloc(DIM, localNs[0]+1, localNs[1]+1, localNs[2]+1);
+  for (int iz = localSs[2]; iz <= localEs[2]; ++iz) {
     double currZ = iz*(topRight.z-botLeft.z)/nz + botLeft.z;
-    for (int iy = 0; iy <= ny; ++iy) {
+    for (int iy = localSs[1]; iy <= localEs[1]; ++iy) {
       double currY = iy*(topRight.y-botLeft.y)/ny + botLeft.y;
-      for (int ix = 0; ix <= nx; ++ix) {
+      for (int ix = localSs[0]; ix <= localEs[0]; ++ix) {
 	double currX = ix*(topRight.x-botLeft.x)/nx + botLeft.x;
-	int vID = ix+iy*(nx+1)+iz*(nx+1)*(ny+1);
-	vertices(0, vID) = currX;
-	vertices(1, vID) = currY;
-	vertices(2, vID) = currZ;
+	vertices(0, ix,iy,iz) = currX;
+	vertices(1, ix,iy,iz) = currY;
+	vertices(2, ix,iy,iz) = currZ;
       }
     }
   }
+  vertices.resize(DIM, nVertices);
+  
   minDX = (topRight.x - botLeft.x)/nx;
   minDY = (topRight.y - botLeft.y)/ny;
   minDZ = (topRight.z - botLeft.z)/nz;
@@ -90,14 +139,14 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   
   // Initialize elements-to-vertices array
   eToV.realloc(N_VERTICES, nElements);
-  for (int iz = 0; iz < nz; ++iz) {
-    int zOff1 = (iz  )*(nx+1)*(ny+1);
-    int zOff2 = (iz+1)*(nx+1)*(ny+1);
-    for (int iy = 0; iy < ny; ++iy) {
-      int yOff1 = (iy  )*(nx+1);
-      int yOff2 = (iy+1)*(nx+1);
-      for (int ix = 0; ix < nx; ++ix) {
-	int eIndex = ix + iy*nx + iz*nx*ny;
+  for (int iz = 0; iz < localNs[2]; ++iz) {
+    int zOff1 = (iz  )*(localNs[0]+1)*(localNs[1]+1);
+    int zOff2 = (iz+1)*(localNs[0]+1)*(localNs[1]+1);
+    for (int iy = 0; iy < localNs[1]; ++iy) {
+      int yOff1 = (iy  )*(localNs[0]+1);
+      int yOff2 = (iy+1)*(localNs[0]+1);
+      for (int ix = 0; ix < localNs[2]; ++ix) {
+	int eIndex = ix + iy*localNs[0] + iz*localNs[0]*localNs[1];
 	int xOff1 = ix;
 	int xOff2 = ix+1;
 	
@@ -113,33 +162,130 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
     }
   }
   
+  // Initialize boundary element maps
+  beToE.realloc(nBElements);
+  ieToE.realloc(nIElements);
+  int bIndex = 0;
+  int iIndex = 0;
+  for (int iz = 0; iz < localNs[2]; ++iz) {
+    for (int iy = 0; iy < localNs[1]; ++iy) {
+      for (int ix = 0; ix < localNs[0]; ++ix) {
+	int eIndex = ix + iy*localNs[0] + iz*localNs[0]*localNs[1];
+	if (ix == 0 || ix == localNs[0]-1 || iy == 0 ||
+	    iy == localNs[1]-1 || iz == 0 || iz == localNs[2]-1) {
+	  beToE(bIndex) = eIndex;
+	  bIndex++;
+	}
+	else {
+	  ieToE(iIndex) = eIndex;
+	  iIndex++;
+	}
+      }
+    }
+  }
+  
   // Initialize element-to-face arrays
-  eToE.realloc(N_FACES, nElements);
-  normals.realloc(DIM, N_FACES, nElements);
-  eToF.realloc(N_FACES, nElements);
+  eToE.realloc(N_FACES, nElements+nGElements);
+  eToF.realloc(N_FACES, nElements+nGElements);
   
   // Modulo enforces periodic boundary conditions
-  for (int iz = 0; iz < nz; ++iz) {
-    int izM = ((iz+nz-1)%nz)*nx*ny;
-    int izP = ((iz+nz+1)%nz)*nx*ny;
-    int iz0 = iz*nx*ny;
-    for (int iy = 0; iy < ny; ++iy) {
-      int iyM = ((iy+ny-1)%ny)*nx;
-      int iyP = ((iy+ny+1)%ny)*nx;
-      int iy0 = iy*nx;
-      for (int ix = 0; ix < nx; ++ix) {
-	int ixM = (ix+nx-1)%nx;
-	int ixP = (ix+nx+1)%nx;
+  for (int iz = 0; iz < localNs[2]; ++iz) {
+    
+    int face4 = 0;
+    int face5 = 0;
+    int izM = iz-1;
+    if (izM < 0) { // face 4
+      face4 = 1;
+    }
+    izM *= localNs[0]*localNs[1];
+    int izP = iz+1;
+    if (izP >= localNs[2]) { // face 5
+      face5 = 1;
+    }
+    izP *= localNs[0]*localNs[1];
+    int iz0 = iz*localNs[0]*localNs[1];
+    
+    for (int iy = 0; iy < localNs[1]; ++iy) {
+      
+      int face2 = 0;
+      int face3 = 0;
+      int iyM = iy-1;
+      if (iyM < 0) { // face 2
+	face2 = 1;
+      }
+      iyM *= localNs[0];
+      
+      int iyP = iy+1;
+      if (iyP >= localNs[1]) { // face 3
+	face3 = 1;
+      }
+      iyP *= localNs[0];
+      int iy0 = iy*localNs[0];
+      
+      for (int ix = 0; ix < localNs[0]; ++ix) {
+	int face0 = 0;
+	int face1 = 0;
+	int ixM = ix-1;
+	if (ixM < 0) { // face 0
+	  face0 = 1;
+	}
+	int ixP = ix+1;
+	if (ixP >= localNs[0]) { // face 1
+	  face1 = 1;
+	}
 	int ix0 = ix;
-	int eIndex = ix + iy0 + iz0;
 	
+	int eIndex = ix0 + iy0 + iz0;
+	// TODO: this is not complete yet
 	// Neighbor elements in -x,+x,-y,+y,-z,+z directions stored in faces
-	eToE(0, eIndex) = ixM+iy0+iz0;
-	eToE(1, eIndex) = ixP+iy0+iz0;
-	eToE(2, eIndex) = ix0+iyM+iz0;
-	eToE(3, eIndex) = ix0+iyP+iz0;
-	eToE(4, eIndex) = ix0+iy0+izM;
-	eToE(5, eIndex) = ix0+iy0+izP;
+	if (face0) {
+	  
+	}
+	else {
+	  eToE(0, eIndex) = ixM+iy0+iz0;
+	}
+	
+	if (face1) {
+
+	}
+	else {
+	  eToE(1, eIndex) = ixP+iy0+iz0;
+	}
+	
+	if (face2) {
+	  
+	}
+	else {
+	  eToE(2, eIndex) = ix0+iyM+iz0;
+	}
+	
+	if (face3) {
+
+	}
+	else {
+	  eToE(3, eIndex) = ix0+iyP+iz0;
+	}
+
+	if (face4) {
+
+	}
+	else {
+	  eToE(4, eIndex) = ix0+iy0+izM;
+	}
+
+	if (face5) {
+	  eToE(5, eIndex) = ix0+iy0+izP;
+	}
+	
+      }
+    }
+  }
+  
+  
+  for (int iz = 0; iz < localNs[2]; ++iz) {
+    for (int iy = 0; iy < localNs[1]; ++iy) {
+      for (int ix = 0; ix < localNs[0]; ++ix) {
+	int eIndex = ix + iy*localNs[0] + iz*localNs[0]*localNs[1];
 	
 	// Face ID of this element's -x face will be neighbor's +x face (same for all dimensions)
 	eToF(0, eIndex) = 1;
@@ -148,6 +294,17 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	eToF(3, eIndex) = 2;
 	eToF(4, eIndex) = 5;
 	eToF(5, eIndex) = 4;
+
+      }
+    }
+  }
+  
+  // Initialize normals
+  normals.realloc(DIM, N_FACES, nElements);
+  for (int iz = 0; iz < localNs[2]; ++iz) {
+    for (int iy = 0; iy < localNs[1]; ++iy) {
+      for (int ix = 0; ix < localNs[0]; ++ix) {
+	int eIndex = ix + iy*localNs[0] + iz*localNs[0]*localNs[1];
 	
 	// Note that normals is already filled with 0s
 	normals(0, 0, eIndex) = -1.0;
@@ -164,7 +321,10 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 
 /** Copy constructor */
 Mesh::Mesh(const Mesh& other) :
+  mpi{other.mpi},
   nElements{other.nElements},
+  nIElements{other.nIElements},
+  nBElements{other.nBElements},
   botLeft{other.botLeft},
   topRight{other.topRight},
   minDX{other.minDX},
@@ -178,6 +338,8 @@ Mesh::Mesh(const Mesh& other) :
   globalCoords{other.globalCoords},
   vertices{other.vertices},
   eToV{other.eToV},
+  beToE{other.beToE},
+  ieToE{other.ieToE},
   eToE{other.eToE},
   normals{other.normals},
   eToF{other.eToF},

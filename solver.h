@@ -52,19 +52,17 @@ private:
   void interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const;
   
   void localDGFlux(const darray& uInterp2D, darray& residuals) const;
-  inline double numericalFluxL(double uK, double uN, 
-			       double normalK, double normalN) const;
+  inline double numericalFluxL(double uK, double uN, double normalK) const;
   
   void convectDGFlux(const darray& uInterp2D, darray& residual) const;
   void convectDGVolume(const darray& uInterp3D, darray& residual) const;
-  inline double numericalFluxC(double uK, double uN, 
-			       const darray& normalK, const darray& normalN) const;
+  inline double numericalFluxC(double uK, double uN, const darray& normalK) const;
   inline double fluxC(double uK, int l) const;
   
   void viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, darray& residual) const;
   void viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, darray& residual) const;
   inline double numericalFluxV(double uK, double uN, const darray& DuK, const darray& DuN, 
-			       const darray& normalK, const darray& normalN) const;
+			       const darray& normalK) const;
   inline double fluxV(double uK, const darray& DuK, int l) const;
   
   

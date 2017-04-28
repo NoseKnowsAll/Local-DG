@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "array.h"
-
+#include "MPIUtil.h"
 
 /** Singular point in 3D */
 class Point {
@@ -51,8 +51,10 @@ public:
   
   
   Mesh();
+  Mesh(const MPIUtil& _mpi);
   Mesh(int nx, int ny, int nz);
   Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
+  Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi);
   Mesh(const Mesh& other);
   
   /** Initialize global nodes from solver's Chebyshev nodes */
@@ -60,10 +62,19 @@ public:
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
-  
-  /** Global number of elements */
+  /** MPI Utility class */
+  MPIUtil mpi;
+  /** MPI-local number of elements that this MPI task is responsible for */
   int nElements;
-  /** Global number of vertices */
+  /** MPI-local number of interior elements */
+  int nIElements;
+  /** MPI-local number of boundary elements in all directions */
+  int nBElements;
+  /** MPI-local number of ghost elements in all direction (not including corners outside domain) */
+  int nGElements;
+  /** MPI-local number of boundary elements in each dimension - one per MPI face */
+  iarray mpiNBElems;
+  /** MPI-local number of vertices */
   int nVertices;
   /** Global bottom left corner of domain */
   Point botLeft;
@@ -103,9 +114,22 @@ public:
   /**
      element-to-vertex mapping:
      For every element k, vertex i
-     eToV(i, k) = global vertex index of local vertex i
+     eToV(i, k) = MPI-local vertex index of local vertex i
    */
   iarray eToV;
+  
+  /**
+     boundary element-to-element map:
+     For every boundary element k,
+     beToE(k) = element number in MPI-local array
+  */
+  iarray beToE;
+  /**
+     interior element-to-element map:
+     For every interior element k,
+     ieToE(k) = element number in MPI-local array
+  */
+  iarray ieToE;
   
   /**
      element-to-element neighbor map:

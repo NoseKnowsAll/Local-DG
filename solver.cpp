@@ -599,7 +599,6 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 	auto nK = mesh.eToE(iF, iK);
 	
 	auto normalK = mesh.normals(l, iF, iK);
-	auto normalN = mesh.normals(l, nF, nK);
 	
 	// Must compute nStates of these flux integrals per face
 	for (int iS = 0; iS < nStates; ++iS) {
@@ -607,7 +606,7 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 	    auto uK = uInterp2D(iFQ, iF, iS, iK);
 	    auto uN = uInterp2D(iFQ, nF, iS, nK);
 	    
-	    fStar(iFQ, iS, iF, l) = numericalFluxL(uK, uN, normalK, normalN);
+	    fStar(iFQ, iS, iF, l) = numericalFluxL(uK, uN, normalK);
 	  }
 	}
 	
@@ -631,14 +630,14 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 }
 
 /** Evaluates the local DG flux function for this PDE at a given value uHere */
-inline double Solver::numericalFluxL(double uK, double uN, double normalK, double normalN) const {
+inline double Solver::numericalFluxL(double uK, double uN, double normalK) const {
   
   auto fK = uK;
   auto fN = uN;
   
   // TODO: In Lax-Friedrichs formulation, this appears to also be the Roe A value?
   //double C = std::abs((fN-fK)/(uN-uK));
-  //double result = (fK+fN)/2.0 + (C/2.0)*(uN*normalN + uK*normalK);
+  //double result = (fK+fN)/2.0 + (C/2.0)*(-uN*normalK + uK*normalK);
   
   double result = (normalK < 0.0 ? fK : fN)*normalK;
   return result;
@@ -670,7 +669,6 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
       auto nK = mesh.eToE(iF, iK);
       
       darray normalK{&mesh.normals(0, iF, iK), 3};
-      darray normalN{&mesh.normals(0, nF, nK), 3};
       
       // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
@@ -678,7 +676,7 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
 	  auto uK = uInterp2D(iFQ, iF, iS, iK);
 	  auto uN = uInterp2D(iFQ, nF, iS, nK);
 	  
-	  fStar(iFQ, iS, iF) = numericalFluxC(uK, uN, normalK, normalN);
+	  fStar(iFQ, iS, iF) = numericalFluxC(uK, uN, normalK);
 	}
       }
       
@@ -701,7 +699,7 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
 }
 
 /** Evaluates the convection DG flux function for this PDE using upwinding */
-inline double Solver::numericalFluxC(double uK, double uN, const darray& normalK, const darray& normalN) const {
+inline double Solver::numericalFluxC(double uK, double uN, const darray& normalK) const {
   
   double result = 0.0;
   
@@ -773,7 +771,6 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
       auto nK = mesh.eToE(iF, iK);
       
       darray normalK{&mesh.normals(0, iF, iK), 3};
-      darray normalN{&mesh.normals(0, nF, nK), 3};
       
       // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
@@ -787,7 +784,7 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
 	    DuN(l) = DuInterp2D(iFQ, nF, iS, nK, l);
 	  }
 	  
-	  fStar(iFQ, iS, iF) = numericalFluxV(uK, uN, DuK, DuN, normalK, normalN);
+	  fStar(iFQ, iS, iF) = numericalFluxV(uK, uN, DuK, DuN, normalK);
 	}
       }
       
@@ -841,7 +838,7 @@ void Solver::viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, 
 }
 
 /** Evaluates the viscous DG flux function for this PDE using upwinding */
-inline double Solver::numericalFluxV(double uK, double uN, const darray& DuK, const darray& DuN, const darray& normalK, const darray& normalN) const {
+inline double Solver::numericalFluxV(double uK, double uN, const darray& DuK, const darray& DuN, const darray& normalK) const {
   
   double result = 0.0;
   

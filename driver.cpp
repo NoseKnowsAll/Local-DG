@@ -1,6 +1,7 @@
 #include <iostream>
 #include <mkl_lapacke.h>
 #include <cmath>
+#include <mpi.h>
 
 #include "dgMath.h"
 #include "mesh.h"
@@ -10,11 +11,14 @@
 /** Main driver function */
 int main(int argc, char *argv[]) {
   
+  MPI_Init(&argc, &argv);
+  MPIUtil mpi{};
+  
   //Point botLeft{-1,-1,-1};
   //Point topRight{1,1,1};
   //Mesh mesh{1,1,1, botLeft, topRight};
   
-  Mesh mesh{};
+  Mesh mesh{mpi};
   
   int p = 2;
   double tf = 1.0;
@@ -23,5 +27,6 @@ int main(int argc, char *argv[]) {
   
   dgSolver.dgTimeStep();
   
+  MPI_Finalize();
   return 0;
 }
