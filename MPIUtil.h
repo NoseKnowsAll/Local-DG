@@ -16,6 +16,9 @@ public:
   /** Initialize MPI_FACE for use in further MPI sends/recvs */
   void initDatatype(int nodesPerFace);
   
+  /* Map MPI faces to the first MPIUtil::N_FACES faces in 3D */
+  void initFaces(int meshDim);
+  
   /** This MPI rank's number */
   int rank;
   /** Total number of MPI tasks */
@@ -31,6 +34,9 @@ public:
   /** Cartesian MPI Communicator */
   MPI_Comm cartComm;
   
+  /** Mapping a given MPI face to the corresponding mesh face */
+  iarray faceMap;
+  
   /** Derived datatype describing the nodes on a single element face */
   MPI_Datatype MPI_FACE;
   
@@ -38,7 +44,6 @@ public:
   const static int DIM = 3;
   /** Number of faces per MPI rank */
   const static int N_FACES = 2*DIM;
-  
   
 };
 

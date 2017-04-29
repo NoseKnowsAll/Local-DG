@@ -134,9 +134,9 @@ public:
   /**
      MPI boundary element-to-element map:
      For every MPI boundary element k, in MPI face i,
-     mpibetoE(k, i) = element number in MPI-local array of neighbor this MPI task controls
+     mpibeToE(k, i) = element number in MPI-local array of neighbor this MPI task controls
   */
-  iarray mpibetoE;
+  iarray mpibeToE;
   
   /**
      element-to-element neighbor map:

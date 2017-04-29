@@ -53,6 +53,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   nElements{},
   nIElements{},
   nBElements{},
+  nGElements{},
   mpiNBElems{},
   nVertices{},
   botLeft{_botLeft},
@@ -69,7 +70,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   eToV{},
   beToE{},
   ieToE{},
-  mpibetoE{},
+  mpibeToE{},
   eToE{},
   eToF{},
   normals{},
@@ -84,16 +85,16 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   int localEs[MPIUtil::DIM];
   for (int l = 0; l < MPIUtil::DIM; ++l) {
     
-    localNs[l] = static_cast<int>(std::floor(globalNs[l] % mpi.nps[l]));
+    localNs[l] = static_cast<int>(std::floor(globalNs[l] / mpi.nps[l]));
     if(mpi.coords[l] < globalNs[l] % mpi.nps[l]) {
       localNs[l]++;
       localSs[l] = mpi.coords[l] * localNs[l];
-      localEs[l] = (mpi.coords[l] + 1)*localNs[l] - 1;
+      localEs[l] = (mpi.coords[l] + 1)*localNs[l];
     } else {
       localSs[l] = (globalNs[l] % mpi.nps[l])*(localNs[l]+1) 
 	+ (mpi.coords[l]     - (globalNs[l]%mpi.nps[l]))*localNs[l];
       localEs[l] = (globalNs[l] % mpi.nps[l])*(localNs[l]+1) 
-	+ (mpi.coords[l] + 1 - (globalNs[l]%mpi.nps[l]))*localNs[l] - 1;
+	+ (mpi.coords[l] + 1 - (globalNs[l]%mpi.nps[l]))*localNs[l];
     }
     
   }
@@ -188,7 +189,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   // Initialize element-to-face arrays and MPI boundary element map
   eToE.realloc(N_FACES, nElements);
   eToF.realloc(N_FACES, nElements);
-  mpibetoE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
+  mpibeToE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
   
   iarray faceOffsets{MPIUtil::N_FACES};
   int offset = 0;
@@ -250,7 +251,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	if (face0) {
 	  int ghostNum = iz*localNs[1]+iy;
 	  eToE(0, eIndex) = faceOffsets(0)+ghostNum;
-	  mpibetoE(ghostNum, 0) = eIndex;
+	  mpibeToE(ghostNum, 0) = eIndex;
 	}
 	else {
 	  eToE(0, eIndex) = ixM+iy0+iz0;
@@ -259,7 +260,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	if (face1) {
 	  int ghostNum = iz*localNs[1]+iy;
 	  eToE(1, eIndex) = faceOffsets(1)+ghostNum;
-	  mpibetoE(ghostNum, 1) = eIndex;
+	  mpibeToE(ghostNum, 1) = eIndex;
 	}
 	else {
 	  eToE(1, eIndex) = ixP+iy0+iz0;
@@ -268,7 +269,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	if (face2) {
 	  int ghostNum = iz*localNs[0]+ix;
 	  eToE(2, eIndex) = faceOffsets(2)+ghostNum;
-	  mpibetoE(ghostNum, 2) = eIndex;
+	  mpibeToE(ghostNum, 2) = eIndex;
 	}
 	else {
 	  eToE(2, eIndex) = ix0+iyM+iz0;
@@ -277,7 +278,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	if (face3) {
 	  int ghostNum = iz*localNs[0]+ix;
 	  eToE(3, eIndex) = faceOffsets(3)+ghostNum;
-	  mpibetoE(ghostNum, 3) = eIndex;
+	  mpibeToE(ghostNum, 3) = eIndex;
 	}
 	else {
 	  eToE(3, eIndex) = ix0+iyP+iz0;
@@ -286,7 +287,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	if (face4) {
 	  int ghostNum = iy*localNs[0]+ix;
 	  eToE(4, eIndex) = faceOffsets(4)+ghostNum;
-	  mpibetoE(ghostNum, 4) = eIndex;
+	  mpibeToE(ghostNum, 4) = eIndex;
 	}
 	else {
 	  eToE(4, eIndex) = ix0+iy0+izM;
@@ -295,7 +296,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
 	if (face5) {
 	  int ghostNum = iy*localNs[0]+ix;
 	  eToE(5, eIndex) = faceOffsets(5)+ghostNum;
-	  mpibetoE(ghostNum, 5) = eIndex;
+	  mpibeToE(ghostNum, 5) = eIndex;
 	}
 	else {
 	  eToE(5, eIndex) = ix0+iy0+izP;
@@ -349,12 +350,14 @@ Mesh::Mesh(const Mesh& other) :
   nElements{other.nElements},
   nIElements{other.nIElements},
   nBElements{other.nBElements},
+  nGElements{other.nGElements},
+  mpiNBElems{other.mpiNBElems},
+  nVertices{other.nVertices},
   botLeft{other.botLeft},
   topRight{other.topRight},
   minDX{other.minDX},
   minDY{other.minDY},
   minDZ{other.minDZ},
-  nVertices{other.nVertices},
   order{other.order},
   nNodes{other.nNodes},
   nFNodes{other.nFNodes},
@@ -364,7 +367,7 @@ Mesh::Mesh(const Mesh& other) :
   eToV{other.eToV},
   beToE{other.beToE},
   ieToE{other.ieToE},
-  mpibetoE{other.mpibetoE},
+  mpibeToE{other.mpibeToE},
   eToE{other.eToE},
   eToF{other.eToF},
   normals{other.normals},

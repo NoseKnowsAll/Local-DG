@@ -8,6 +8,7 @@
 #include <chrono>
 
 #include "mesh.h"
+#include "MPIUtil.h"
 #include "dgMath.h"
 #include "io.h"
 
@@ -47,9 +48,11 @@ private:
   void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
   void rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
 	      darray& Dus, darray& DuInterp2D, darray& DuInterp3D, 
+	      darray& uToSend, darray& uToRecv, darray& DuToSend, darray& DuToRecv,
 	      darray& ks, int istage) const;
   
-  void interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D) const;
+  void interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
+		    darray& uToSend, darray& uToRecv) const;
   void interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const;
   
   void localDGFlux(const darray& uInterp2D, darray& residuals) const;
@@ -66,6 +69,8 @@ private:
 			       const darray& normalK) const;
   inline double fluxV(double uK, const darray& DuK, int l) const;
   
+  void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
+  void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;
   
 public:
   Solver();

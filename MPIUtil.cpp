@@ -20,7 +20,7 @@ MPIUtil::MPIUtil() {
   
   coords.realloc(DIM);
   MPI_Cart_coords(cartComm, rank, DIM, coords.data());
-  std::cout << "P:" << rank << ", My coordinates are " << coords << std::endl;
+  std::cout << "P: " << rank << ", My coordinates are " << coords << std::endl;
   
   neighbors.realloc(N_FACES);
   for (int l = 0; l < DIM; ++l) {
@@ -37,4 +37,12 @@ void MPIUtil::initDatatype(int nodesPerFace) {
   MPI_Type_contiguous(nodesPerFace, MPI_DOUBLE, &MPI_FACE);
   MPI_Type_commit(&MPI_FACE);
   
+}
+
+/* Map MPI faces to the first MPIUtil::N_FACES faces in 3D */
+void MPIUtil::initFaces(int meshDim) {
+  faceMap.realloc(N_FACES);
+  for (int l = 0; l < N_FACES; ++l) {
+    faceMap(l) = meshDim - N_FACES + l;
+  }
 }

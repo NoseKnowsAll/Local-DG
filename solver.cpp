@@ -39,6 +39,7 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   dofs = refNodes.size(1)*refNodes.size(2)*refNodes.size(3);
   mesh.setupNodes(refNodes, order);
   mpi.initDatatype(mesh.nFQNodes);
+  mpi.initFaces(Mesh::N_FACES);
   
   // TODO: DEPENDS ON PDE
   nStates = 1;
@@ -347,13 +348,20 @@ void Solver::dgTimeStep() {
   diagA(2) = 1.0;
   
   // Allocate working memory
+  int nQ2D = mesh.nFQNodes;
   darray uCurr{dofs, nStates, mesh.nElements};
-  darray uInterp2D{Interp2D.size(0), nStates, Mesh::N_FACES, mesh.nElements};
+  darray uInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements};
   darray uInterp3D{Interp3D.size(0), nStates,  mesh.nElements};
   darray ks{dofs, nStates, mesh.nElements, nStages};
   darray Dus{dofs, nStates, mesh.nElements, Mesh::DIM};
-  darray DuInterp2D{Interp2D.size(0), nStates, Mesh::N_FACES, mesh.nElements, Mesh::DIM};
+  darray DuInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements, Mesh::DIM};
   darray DuInterp3D{Interp3D.size(0), nStates,  mesh.nElements, Mesh::DIM};
+  
+  int nBElems = max(mesh.mpiNBElems);
+  darray uToSend {nQ2D, nStates, nBElems, MPIUtil::N_FACES};
+  darray uToRecv {nQ2D, nStates, nBElems, MPIUtil::N_FACES};
+  darray DuToSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
+  darray DuToRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   
   std::cout << "Time stepping until tf = " << tf << std::endl;
   
@@ -386,7 +394,8 @@ void Solver::dgTimeStep() {
       rk4UpdateCurr(uCurr, diagA, ks, istage);
       
       // Updates ks(:,istage) = rhs(uCurr) based on DG method
-      rk4Rhs(uCurr, uInterp2D, uInterp3D, Dus, DuInterp2D, DuInterp3D, ks, istage);
+      rk4Rhs(uCurr, uInterp2D, uInterp3D, Dus, DuInterp2D, DuInterp3D,
+	     uToSend, uToRecv, DuToSend, DuToRecv, ks, istage);
       
     }
     
@@ -442,11 +451,13 @@ void Solver::rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks,
 */
 void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
 		    darray& Dus, darray& DuInterp2D, darray& DuInterp3D, 
+		    darray& uToSend, darray& uToRecv, darray& DuToSend, darray& DuToRecv,
 		    darray& ks, int istage) const {
   
   // Interpolate uCurr once
-  interpolateU(uCurr, uInterp2D, uInterp3D);
+  interpolateU(uCurr, uInterp2D, uInterp3D, uToSend, uToRecv);
   
+  /*
   // First solve for the Dus in each dimension according to:
   // Du_l = Mel\(-S_l*u + fluxesL(u))
   Dus.fill(0.0);
@@ -466,6 +477,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   
   // Interpolate Dus once
   interpolateDus(Dus, DuInterp2D, DuInterp3D);
+  */
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // ks(:,istage) = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
@@ -474,7 +486,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   residual.fill(0.0);
   
   convectDGFlux(uInterp2D, residual);
-  viscousDGFlux(uInterp2D, DuInterp2D, residual);
+  //viscousDGFlux(uInterp2D, DuInterp2D, residual);
   
   // ks(:,istage) = -Fc(u)-Fv(u,Dus)
   cblas_dscal(dofs*nStates*mesh.nElements, -1.0, residual.data(), 1);
@@ -483,7 +495,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   convectDGVolume(uInterp3D, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  viscousDGVolume(uInterp3D, DuInterp3D, residual);
+  //viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
   //std::cout << "res = [" << std::endl;
   //std::cout << residual << std::endl;
@@ -507,7 +519,8 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
    Interpolates u on faces to 2D quadrature points and stores in uInterp2D.
    Interpolates u onto 3D quadrature points and stores in uInterp3D.
 */
-void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D) const {
+void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
+			  darray& toSend, darray& toRecv) const {
   
   // First grab u on faces and pack into array uOnFaces
   int nFN = mesh.nFNodes;
@@ -528,6 +541,19 @@ void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInter
 	      Interp2D.data(), nQ2D, uOnFaces.data(), nFN, 
 	      0.0, uInterp2D.data(), nQ2D);
   
+  
+  // TODO: ensure these work for convection
+  /**
+     Requests for use in MPI sends/receives during rk4Rhs()
+     2*face == send, 2*face+1 == recv
+  */
+  MPI_Request rk4Reqs[2*MPIUtil::N_FACES];
+  mpiStartComm(uInterp2D, 1, toSend, toRecv, rk4Reqs);
+  
+  // TODO: move this after all interior elements have been computed on
+  mpiEndComm(uInterp2D, 1, toRecv, rk4Reqs);
+  
+  
   // 3D interpolation uInterp3D = Interp3D*uCurr
   int nQ3D = Interp3D.size(0);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
@@ -539,6 +565,7 @@ void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInter
 /**
    Interpolates Dus on faces to 2D quadrature points and stores in DuInterp2D.
    Interpolates Dus onto 3D quadrature points and stores in DuInterp3D.
+   TODO: combine this function with interpolateUs
 */
 void Solver::interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const {
   
@@ -872,4 +899,80 @@ inline double Solver::fluxV(double uK, const darray& DuK, int l) const {
     std::cerr << "How the hell...?" << std::endl;
     return 0.0;
   }
+}
+
+
+/**
+   MPI communication: Start nonblocking Sends/Recvs of pre-interpolated data to other tasks.
+   First packs data from interpolated face data into send arrays.
+   Assumes interpolated is of size (nQ2D, nStates, Mesh::N_FACES, nElements, dim)
+*/
+void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const {
+  
+  int nQ2D = mesh.nFQNodes;
+  
+  // Pack face data to send
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    
+    for (int l = 0; l < dim; ++l) {
+      for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
+	int iK = mesh.mpibeToE(bK, iF);
+	
+	for (int iS = 0; iS < nStates; ++iS) {
+	  for (int iQ = 0; iQ < nQ2D; ++iQ) {
+	    toSend(iQ, iS, bK, iF, l) = interpolated(iQ, iS, mpi.faceMap(iF), iK, l);
+	    // TODO: is the above valid if interpolated doesn't have the last dimension?
+	  }
+	}
+      }
+    }
+    
+  }
+  
+  // Actually send/recv the data
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    
+    MPI_Isend(&toSend(0,0,0,iF), mesh.mpiNBElems(iF)*nStates, 
+	      mpi.MPI_FACE, mpi.neighbors(iF), iF,
+	      mpi.cartComm, &rk4Reqs[2*iF]);
+    
+    MPI_Irecv(&toRecv(0,0,0,iF), mesh.mpiNBElems(iF)*nStates, 
+	      mpi.MPI_FACE, mpi.neighbors(iF), ((iF % 2) == 0 ? iF+1 : iF-1), 
+	      mpi.cartComm, &rk4Reqs[2*iF+1]);
+    
+  }
+  
+}
+
+/**
+   MPI communication: Finalizes nonblocking Sends/Recvs of uInterp2D.
+   Then unpacks data from recv arrays into interpolated.
+   Assumes interpolated is of size (nQ2D, nStates, Mesh::N_FACES, nElements, dim)
+*/
+void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const {
+  
+  int nQ2D = mesh.nFQNodes;
+  
+  // Finalizes sends/recvs
+  // TODO: would there really be any benefit to waiting on only some of the faces first?
+  MPI_Waitall(2*MPIUtil::N_FACES, rk4Reqs, MPI_STATUSES_IGNORE);
+  
+  // Unpack data
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    
+    for (int l = 0; l < dim; ++l) {
+      for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
+	int iK = mesh.mpibeToE(bK, iF);
+	int nK = mesh.eToE(mpi.faceMap(iF), iK);
+	
+	for (int iS = 0; iS < nStates; ++iS) {
+	  for (int iQ = 0; iQ < nQ2D; ++iQ) {
+	    interpolated(iQ, iS, mpi.faceMap(iF), nK, l) = toRecv(iQ, iS, bK, iF, l);
+	  }
+	}
+      }
+    }
+    
+  }
+  
 }
