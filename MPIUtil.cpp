@@ -29,6 +29,11 @@ MPIUtil::MPIUtil() {
     
   }
   
+  tags.realloc(N_FACES);
+  for (int iF = 0; iF < N_FACES; ++iF) {
+    tags(iF) = ((iF % 2) == 0 ? iF+1 : iF-1);
+  }
+  
 }
 
 /** Initialize MPI_FACE for use in further MPI sends/recvs */

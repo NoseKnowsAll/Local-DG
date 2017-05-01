@@ -31,6 +31,9 @@ public:
   /** DIM array defining this rank's coordinate in cartComm */
   iarray coords;
   
+  /** Tag array for each face when on receiving side of communication */
+  iarray tags;
+  
   /** Cartesian MPI Communicator */
   MPI_Comm cartComm;
   

@@ -311,7 +311,10 @@ void Solver::initialCondition() {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    
-	    u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)-std::pow(y-.5,2.0)-std::pow(z-.5,2.0))/(2*sigmaSq));
+	    u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)
+					-std::pow(y-.5,2.0)
+					-std::pow(z-.5,2.0))
+				       /(2*sigmaSq));
 	    
 	  }
 	}
@@ -319,6 +322,36 @@ void Solver::initialCondition() {
     }
   }
   
+}
+
+/** Computes the true solution at time t for the convection problem */
+void Solver::trueSolution(double t) {
+  
+  // Gaussian distribution with variance 0.2, centered around 0.5
+  double sigmaSq = 0.2;
+  double a = 1.0/(std::sqrt(sigmaSq*2*M_PI));
+  
+  for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iS = 0; iS < nStates; ++iS) {
+      for (int iz = 0; iz < order+1; ++iz) {
+	for (int iy = 0; iy < order+1; ++iy) {
+	  for (int ix = 0; ix < order+1; ++ix) {
+	    int vID = ix + iy*(order+1) + iz*(order+1)*(order+1);
+	    
+	    double x = mesh.globalCoords(0,vID,k);
+	    double y = mesh.globalCoords(1,vID,k);
+	    double z = mesh.globalCoords(2,vID,k);
+	    // True solution = initial solution u0(x-a*t)
+	    u(vID, iS, k) = a*std::exp((-std::pow(fmod(x-this->a[0]*t+5.0,1.0)-.5,2.0)
+					-std::pow(fmod(y-this->a[1]*t+5.0,1.0)-.5,2.0)
+					-std::pow(fmod(z-this->a[2]*t+5.0,1.0)-.5,2.0))
+				       /(2*sigmaSq));
+	    
+	  }
+	}
+      }
+    }
+  }
 }
 
 /**
@@ -350,16 +383,16 @@ void Solver::dgTimeStep() {
   // Allocate working memory
   int nQ2D = mesh.nFQNodes;
   darray uCurr{dofs, nStates, mesh.nElements};
-  darray uInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements};
+  darray uInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, 1};
   darray uInterp3D{Interp3D.size(0), nStates,  mesh.nElements};
   darray ks{dofs, nStates, mesh.nElements, nStages};
   darray Dus{dofs, nStates, mesh.nElements, Mesh::DIM};
-  darray DuInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements, Mesh::DIM};
+  darray DuInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, Mesh::DIM};
   darray DuInterp3D{Interp3D.size(0), nStates,  mesh.nElements, Mesh::DIM};
   
   int nBElems = max(mesh.mpiNBElems);
-  darray uToSend {nQ2D, nStates, nBElems, MPIUtil::N_FACES};
-  darray uToRecv {nQ2D, nStates, nBElems, MPIUtil::N_FACES};
+  darray uToSend {nQ2D, nStates, nBElems, 1, MPIUtil::N_FACES};
+  darray uToRecv {nQ2D, nStates, nBElems, 1, MPIUtil::N_FACES};
   darray DuToSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   darray DuToRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   
@@ -630,8 +663,8 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 	// Must compute nStates of these flux integrals per face
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	    auto uK = uInterp2D(iFQ, iF, iS, iK);
-	    auto uN = uInterp2D(iFQ, nF, iS, nK);
+	    auto uK = uInterp2D(iFQ, iS, iF, iK);
+	    auto uN = uInterp2D(iFQ, iS, nF, nK);
 	    
 	    fStar(iFQ, iS, iF, l) = numericalFluxL(uK, uN, normalK);
 	  }
@@ -700,8 +733,8 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
       // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
 	for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	  auto uK = uInterp2D(iFQ, iF, iS, iK);
-	  auto uN = uInterp2D(iFQ, nF, iS, nK);
+	  auto uK = uInterp2D(iFQ, iS, iF, iK);
+	  auto uN = uInterp2D(iFQ, iS, nF, nK);
 	  
 	  fStar(iFQ, iS, iF) = numericalFluxC(uK, uN, normalK);
 	}
@@ -802,8 +835,8 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
       // Must compute nStates of these flux integrals per face
       for (int iS = 0; iS < nStates; ++iS) {
 	for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	  auto uK = uInterp2D(iFQ, iF, iS, iK);
-	  auto uN = uInterp2D(iFQ, nF, iS, nK);
+	  auto uK = uInterp2D(iFQ, iS, iF, iK);
+	  auto uN = uInterp2D(iFQ, iS, nF, nK);
 	  darray DuK{Mesh::DIM};
 	  darray DuN{Mesh::DIM};
 	  for (int l = 0; l < Mesh::DIM; ++l) {
@@ -905,7 +938,7 @@ inline double Solver::fluxV(double uK, const darray& DuK, int l) const {
 /**
    MPI communication: Start nonblocking Sends/Recvs of pre-interpolated data to other tasks.
    First packs data from interpolated face data into send arrays.
-   Assumes interpolated is of size (nQ2D, nStates, Mesh::N_FACES, nElements, dim)
+   Assumes interpolated is of size (nQ2D, nStates, Mesh::N_FACES, nElements+nGElements, dim)
 */
 void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const {
   
@@ -920,8 +953,7 @@ void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, d
 	
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iQ = 0; iQ < nQ2D; ++iQ) {
-	    toSend(iQ, iS, bK, iF, l) = interpolated(iQ, iS, mpi.faceMap(iF), iK, l);
-	    // TODO: is the above valid if interpolated doesn't have the last dimension?
+	    toSend(iQ, iS, bK, l, iF) = interpolated(iQ, iS, mpi.faceMap(iF), iK, l);
 	  }
 	}
       }
@@ -932,12 +964,12 @@ void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, d
   // Actually send/recv the data
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
     
-    MPI_Isend(&toSend(0,0,0,iF), mesh.mpiNBElems(iF)*nStates, 
+    MPI_Isend(&toSend(0,0,0,0,iF), nStates*mesh.mpiNBElems(iF)*dim, 
 	      mpi.MPI_FACE, mpi.neighbors(iF), iF,
 	      mpi.cartComm, &rk4Reqs[2*iF]);
     
-    MPI_Irecv(&toRecv(0,0,0,iF), mesh.mpiNBElems(iF)*nStates, 
-	      mpi.MPI_FACE, mpi.neighbors(iF), ((iF % 2) == 0 ? iF+1 : iF-1), 
+    MPI_Irecv(&toRecv(0,0,0,0,iF), nStates*mesh.mpiNBElems(iF)*dim,
+	      mpi.MPI_FACE, mpi.neighbors(iF), mpi.tags(iF), 
 	      mpi.cartComm, &rk4Reqs[2*iF+1]);
     
   }
@@ -962,12 +994,14 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
     
     for (int l = 0; l < dim; ++l) {
       for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
-	int iK = mesh.mpibeToE(bK, iF);
-	int nK = mesh.eToE(mpi.faceMap(iF), iK);
+	auto iK = mesh.mpibeToE(bK, iF);
+	auto nF = mesh.eToF(mpi.faceMap(iF), iK);
+	auto nK = mesh.eToE(mpi.faceMap(iF), iK);
+	
 	
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iQ = 0; iQ < nQ2D; ++iQ) {
-	    interpolated(iQ, iS, mpi.faceMap(iF), nK, l) = toRecv(iQ, iS, bK, iF, l);
+	    interpolated(iQ, iS, nF, nK, l) = toRecv(iQ, iS, bK, l, iF);
 	  }
 	}
       }
