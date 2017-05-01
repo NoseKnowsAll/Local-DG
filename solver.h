@@ -49,12 +49,10 @@ private:
   void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
   void rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
 	      darray& Dus, darray& DuInterp2D, darray& DuInterp3D, 
-	      darray& uToSend, darray& uToRecv, darray& DuToSend, darray& DuToRecv,
-	      darray& ks, int istage) const;
+	      darray& toSend, darray& toRecv, darray& ks, int istage) const;
   
-  void interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
-		    darray& uToSend, darray& uToRecv) const;
-  void interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const;
+  void interpolate(const darray& curr, darray& toInterp2D, darray& toInterp3D,
+		   darray& toSend, darray& toRecv, int dim) const;
   
   void localDGFlux(const darray& uInterp2D, darray& residuals) const;
   inline double numericalFluxL(double uK, double uN, double normalK) const;

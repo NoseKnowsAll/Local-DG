@@ -382,19 +382,17 @@ void Solver::dgTimeStep() {
   
   // Allocate working memory
   int nQ2D = mesh.nFQNodes;
-  darray uCurr{dofs, nStates, mesh.nElements};
+  darray uCurr{dofs, nStates, mesh.nElements, 1};
   darray uInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, 1};
-  darray uInterp3D{Interp3D.size(0), nStates,  mesh.nElements};
+  darray uInterp3D{Interp3D.size(0), nStates, mesh.nElements, 1};
   darray ks{dofs, nStates, mesh.nElements, nStages};
   darray Dus{dofs, nStates, mesh.nElements, Mesh::DIM};
   darray DuInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, Mesh::DIM};
-  darray DuInterp3D{Interp3D.size(0), nStates,  mesh.nElements, Mesh::DIM};
+  darray DuInterp3D{Interp3D.size(0), nStates, mesh.nElements, Mesh::DIM};
   
   int nBElems = max(mesh.mpiNBElems);
-  darray uToSend {nQ2D, nStates, nBElems, 1, MPIUtil::N_FACES};
-  darray uToRecv {nQ2D, nStates, nBElems, 1, MPIUtil::N_FACES};
-  darray DuToSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
-  darray DuToRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
+  darray toSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
+  darray toRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   
   std::cout << "Time stepping until tf = " << tf << std::endl;
   
@@ -428,7 +426,7 @@ void Solver::dgTimeStep() {
       
       // Updates ks(:,istage) = rhs(uCurr) based on DG method
       rk4Rhs(uCurr, uInterp2D, uInterp3D, Dus, DuInterp2D, DuInterp3D,
-	     uToSend, uToRecv, DuToSend, DuToRecv, ks, istage);
+	     toSend, toRecv, ks, istage);
       
     }
     
@@ -484,13 +482,11 @@ void Solver::rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks,
 */
 void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
 		    darray& Dus, darray& DuInterp2D, darray& DuInterp3D, 
-		    darray& uToSend, darray& uToRecv, darray& DuToSend, darray& DuToRecv,
-		    darray& ks, int istage) const {
+		    darray& toSend, darray& toRecv, darray& ks, int istage) const {
   
   // Interpolate uCurr once
-  interpolateU(uCurr, uInterp2D, uInterp3D, uToSend, uToRecv);
+  interpolate(uCurr, uInterp2D, uInterp3D, toSend, toRecv, 1);
   
-  /*
   // First solve for the Dus in each dimension according to:
   // Du_l = Mel\(-S_l*u + fluxesL(u))
   Dus.fill(0.0);
@@ -509,8 +505,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   }
   
   // Interpolate Dus once
-  interpolateDus(Dus, DuInterp2D, DuInterp3D);
-  */
+  interpolate(Dus, DuInterp2D, DuInterp3D, toSend, toRecv, Mesh::DIM);
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // ks(:,istage) = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
@@ -519,7 +514,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   residual.fill(0.0);
   
   convectDGFlux(uInterp2D, residual);
-  //viscousDGFlux(uInterp2D, DuInterp2D, residual);
+  viscousDGFlux(uInterp2D, DuInterp2D, residual);
   
   // ks(:,istage) = -Fc(u)-Fv(u,Dus)
   cblas_dscal(dofs*nStates*mesh.nElements, -1.0, residual.data(), 1);
@@ -528,7 +523,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   convectDGVolume(uInterp3D, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  //viscousDGVolume(uInterp3D, DuInterp3D, residual);
+  viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
   //std::cout << "res = [" << std::endl;
   //std::cout << residual << std::endl;
@@ -549,49 +544,48 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
 }
 
 /**
-   Interpolates u on faces to 2D quadrature points and stores in uInterp2D.
-   Interpolates u onto 3D quadrature points and stores in uInterp3D.
+   Interpolates u/Du on faces to 2D quadrature points and stores in u/DuInterp2D.
+   Interpolates u/Du onto 3D quadrature points and stores in u/DuInterp3D.
 */
-void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
-			  darray& toSend, darray& toRecv) const {
+void Solver::interpolate(const darray& curr, darray& toInterp2D, darray& toInterp3D,
+			 darray& toSend, darray& toRecv, int dim) const {
   
   // First grab u on faces and pack into array uOnFaces
   int nFN = mesh.nFNodes;
   int nQ2D = mesh.nFQNodes;
-  darray uOnFaces{nFN, nStates, Mesh::N_FACES, mesh.nElements};
-  for (int iK = 0; iK < mesh.nElements; ++iK) {
-    for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iFN = 0; iFN < nFN; ++iFN) {
-	  uOnFaces(iFN, iS, iF, iK) = uCurr(mesh.efToN(iFN, iF), iS, iK);
+  darray onFaces{nFN, nStates, Mesh::N_FACES, mesh.nElements, dim};
+  for (int l = 0; l < dim; ++l) {
+    for (int iK = 0; iK < mesh.nElements; ++iK) {
+      for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
+	for (int iS = 0; iS < nStates; ++iS) {
+	  for (int iFN = 0; iFN < nFN; ++iFN) {
+	    onFaces(iFN, iS, iF, iK, l) = curr(mesh.efToN(iFN, iF), iS, iK, l);
+	  }
 	}
       }
     }
   }
-  // 2D interpolation uInterp2D = Interp2D*uOnFaces
+  // 2D interpolation toInterp2D = Interp2D*uOnFaces
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQ2D, nStates*Mesh::N_FACES*mesh.nElements, nFN, 1.0, 
-	      Interp2D.data(), nQ2D, uOnFaces.data(), nFN, 
-	      0.0, uInterp2D.data(), nQ2D);
+	      nQ2D, nStates*Mesh::N_FACES*mesh.nElements*dim, nFN, 1.0, 
+	      Interp2D.data(), nQ2D, onFaces.data(), nFN, 
+	      0.0, toInterp2D.data(), nQ2D);
   
-  
-  // TODO: ensure these work for convection
   /**
      Requests for use in MPI sends/receives during rk4Rhs()
      2*face == send, 2*face+1 == recv
   */
   MPI_Request rk4Reqs[2*MPIUtil::N_FACES];
-  mpiStartComm(uInterp2D, 1, toSend, toRecv, rk4Reqs);
+  mpiStartComm(toInterp2D, dim, toSend, toRecv, rk4Reqs);
   
   // TODO: move this after all interior elements have been computed on
-  mpiEndComm(uInterp2D, 1, toRecv, rk4Reqs);
+  mpiEndComm(toInterp2D, dim, toRecv, rk4Reqs);
   
-  
-  // 3D interpolation uInterp3D = Interp3D*uCurr
+  // 3D interpolation toInterp3D = Interp3D*curr
   int nQ3D = Interp3D.size(0);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQ3D, nStates*mesh.nElements, dofs, 1.0, Interp3D.data(), dofs,
-	      uCurr.data(), dofs, 0.0, uInterp3D.data(), nQ3D);
+	      nQ3D, nStates*mesh.nElements*dim, dofs, 1.0, Interp3D.data(), dofs,
+	      curr.data(), dofs, 0.0, toInterp3D.data(), nQ3D);
   
 }
 
@@ -599,7 +593,7 @@ void Solver::interpolateU(const darray& uCurr, darray& uInterp2D, darray& uInter
    Interpolates Dus on faces to 2D quadrature points and stores in DuInterp2D.
    Interpolates Dus onto 3D quadrature points and stores in DuInterp3D.
    TODO: combine this function with interpolateUs
-*/
+*
 void Solver::interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const {
   
   // First grab u on faces and pack into array uOnFaces
@@ -630,6 +624,7 @@ void Solver::interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInt
 	      Dus.data(), dofs, 0.0, DuInterp3D.data(), nQ3D);
   
 }
+*/
 
 
 /**
@@ -840,8 +835,8 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
 	  darray DuK{Mesh::DIM};
 	  darray DuN{Mesh::DIM};
 	  for (int l = 0; l < Mesh::DIM; ++l) {
-	    DuK(l) = DuInterp2D(iFQ, iF, iS, iK, l);
-	    DuN(l) = DuInterp2D(iFQ, nF, iS, nK, l);
+	    DuK(l) = DuInterp2D(iFQ, iS, iF, iK, l);
+	    DuN(l) = DuInterp2D(iFQ, iS, nF, nK, l);
 	  }
 	  
 	  fStar(iFQ, iS, iF) = numericalFluxV(uK, uN, DuK, DuN, normalK);
