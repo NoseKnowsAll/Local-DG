@@ -44,7 +44,7 @@ private:
   void precomputeLocalMatrices();
   void precomputeInterpMatrices();
   void initialCondition();
-  void trueSolution(double t);
+  void trueSolution(darray& uTrue, double t) const;
   
   void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
   void rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 

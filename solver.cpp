@@ -296,10 +296,7 @@ void Solver::precomputeLocalMatrices() {
 // TODO: Initialize u0 based off of a reasonable function
 void Solver::initialCondition() {
   
-  // Gaussian distribution with variance 0.2, centered around 0.5
-  double sigmaSq = 0.2;
-  double a = 1.0/(std::sqrt(sigmaSq*2*M_PI));
-  
+  // Sin function allowing for periodic initial condition
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int iS = 0; iS < nStates; ++iS) {
       for (int iz = 0; iz < order+1; ++iz) {
@@ -311,10 +308,8 @@ void Solver::initialCondition() {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    
-	    u(vID, iS, k) = a*std::exp((-std::pow(x-.5,2.0)
-					-std::pow(y-.5,2.0)
-					-std::pow(z-.5,2.0))
-				       /(2*sigmaSq));
+	    u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
+	    //u(vID, iS, k) = std::exp(-100*std::pow(y-.5, 2.0));
 	    
 	  }
 	}
@@ -324,12 +319,11 @@ void Solver::initialCondition() {
   
 }
 
-/** Computes the true solution at time t for the convection problem */
-void Solver::trueSolution(double t) {
+/** Computes the true convection solution at time t for the convection problem */
+void Solver::trueSolution(darray& uTrue, double t) const {
   
-  // Gaussian distribution with variance 0.2, centered around 0.5
-  double sigmaSq = 0.2;
-  double a = 1.0/(std::sqrt(sigmaSq*2*M_PI));
+  int N = 2;
+  double eps = 1e-2;
   
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int iS = 0; iS < nStates; ++iS) {
@@ -342,10 +336,15 @@ void Solver::trueSolution(double t) {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    // True solution = initial solution u0(x-a*t)
-	    u(vID, iS, k) = a*std::exp((-std::pow(fmod(x-this->a[0]*t+5.0,1.0)-.5,2.0)
-					-std::pow(fmod(y-this->a[1]*t+5.0,1.0)-.5,2.0)
-					-std::pow(fmod(z-this->a[2]*t+5.0,1.0)-.5,2.0))
-				       /(2*sigmaSq));
+	    /*uTrue(vID, iS, k) = std::sin(2*fmod(x-this->a[0]*t+5.0,1.0)*M_PI)
+	      *std::sin(2*fmod(y-this->a[1]*t+5.0,1.0)*M_PI)
+	      *std::sin(2*fmod(z-this->a[2]*t+5.0,1.0)*M_PI);*/
+	    uTrue(vID, iS, k) = 0.0;
+	    for (int i = -N; i <= N; ++i) {
+	      uTrue(vID, iS, k) += std::exp(-100/(1+400*eps*t)*
+					    (std::pow(std::fmod(y-t,1.0)-.5+i,2.0)))
+		/std::sqrt(1+400*eps*t);
+	    }
 	    
 	  }
 	}
@@ -389,6 +388,7 @@ void Solver::dgTimeStep() {
   darray Dus{dofs, nStates, mesh.nElements, Mesh::DIM};
   darray DuInterp2D{nQ2D, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, Mesh::DIM};
   darray DuInterp3D{Interp3D.size(0), nStates, mesh.nElements, Mesh::DIM};
+  darray uTrue{dofs, nStates, mesh.nElements, 1};
   
   int nBElems = max(mesh.mpiNBElems);
   darray toSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
@@ -410,6 +410,23 @@ void Solver::dgTimeStep() {
       success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
+      
+      /* TODO: debugging for convection problem
+      trueSolution(uTrue, iStep*dt);
+      double norm = 0.0;
+      for (int iK = 0; iK < mesh.nElements; ++iK) {
+	for (int iS = 0; iS < nStates; ++iS) {
+	  for (int iN = 0; iN < dofs; ++iN) {
+	    uTrue(iN, iS, iK) -= u(iN, iS, iK);
+	    if (std::abs(uTrue(iN, iS, iK)) > norm) {
+	      norm = std::abs(uTrue(iN, iS, iK));
+	    }
+	  }
+	}
+      }
+      std::cout << "infinity norm at time " << iStep*dt << " = " << norm << std::endl;
+      // END TODO
+      */
       
       if (iStep/dtSnaps == 10) {
 	std::cout << "exiting for debugging purposes...\n";
@@ -564,12 +581,14 @@ void Solver::interpolate(const darray& curr, darray& toInterp2D, darray& toInter
 	}
       }
     }
+    
+    // 2D interpolation toInterp2D = Interp2D*uOnFaces
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		nQ2D, nStates*Mesh::N_FACES*mesh.nElements, nFN, 1.0, 
+		Interp2D.data(), nQ2D, &onFaces(0,0,0,0,l), nFN, 
+		0.0, &toInterp2D(0,0,0,0,l), nQ2D);
   }
-  // 2D interpolation toInterp2D = Interp2D*uOnFaces
-  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQ2D, nStates*Mesh::N_FACES*mesh.nElements*dim, nFN, 1.0, 
-	      Interp2D.data(), nQ2D, onFaces.data(), nFN, 
-	      0.0, toInterp2D.data(), nQ2D);
+  
   
   /**
      Requests for use in MPI sends/receives during rk4Rhs()
@@ -772,7 +791,7 @@ inline double Solver::numericalFluxC(double uK, double uN, const darray& normalK
 
 /** Evaluates the actual convection flux function for the PDE */
 inline double Solver::fluxC(double uK, int l) const {
-  return a[l]*uK;
+  return a[l]*uK;  
 }
 
 /** Evaluates the volume integral term for convection in the RHS */
