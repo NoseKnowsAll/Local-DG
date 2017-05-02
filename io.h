@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <mpi.h>
 
 #include "array.h"
 

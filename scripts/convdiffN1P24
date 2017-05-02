@@ -1,0 +1,19 @@
+#!/bin/bash -l
+#SBATCH -p debug
+#SBATCH -t 00:05:00
+#SBATCH -N 2
+#SBATCH --ntasks-per-node=24
+#SBATCH -A mp309
+#SBATCH -o output/convdiff.%j.out
+#SBATCH -e output/convdiff.%j.err
+
+EXEPATH=/global/homes/f/frms4q/CS267/final/Local-DG/
+EXE=${EXEPATH}driver
+NP=$((24*${SLURM_NNODES}))
+NPROC=1
+
+OUTPUT=${EXEPATH}output/testOutput.out
+
+echo "running srun -n ${NP} -N ${SLURM_NNODES} ${EXE} > ${OUTPUT}"
+srun -n ${NP} -N ${SLURM_NNODES} ${EXE} > ${OUTPUT}
+tail ${OUTPUT}

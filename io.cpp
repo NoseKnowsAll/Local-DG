@@ -107,5 +107,20 @@ bool exportToXYZVFile(const std::string& filename, int timeseries, const darray&
   std::ostringstream oss;
   oss << filename << "." << timeseries;
   
-  return exportToXYZVFile(oss.str(), globalCoords, arr);
+  int np, rank;
+  MPI_Comm_size(MPI_COMM_WORLD, &np);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  
+  int localSuccess = 0;
+  int globalSuccess = 0;
+  
+  for (int ir = 0; ir < np; ++ir) {
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == ir) {
+      localSuccess = (exportToXYZVFile(oss.str(), globalCoords, arr) ? 1 : 0);
+    }
+  }
+  
+  MPI_Allreduce(&localSuccess, &globalSuccess, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
+  return (globalSuccess > 0 ? true : false);
 }

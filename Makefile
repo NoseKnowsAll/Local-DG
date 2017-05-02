@@ -3,8 +3,9 @@ CC = mpiicpc
 
 DEBUG = -O0 -g -traceback -Wcheck -ftrapuv -debug all
 
-CFLAGS  = -O3 -std=c++11 -mkl $(DEBUG)
-LFLAGS  = -O3 -std=c++11 -mkl $(DEBUG)
+CFLAGS  = -O3 -std=c++11 -mkl
+LFLAGS  = -O3 -std=c++11 -mkl
+#${DEBUG}
 DEFINES = #-Dvariables
 HEADERS = solver.h mesh.h dgMath.h io.h MPIUtil.h array.h
 OBJS    = driver.o solver.o mesh.o dgMath.o io.o MPIUtil.o
