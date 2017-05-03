@@ -394,16 +394,25 @@ void Solver::dgTimeStep() {
   darray toSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   darray toRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   
-  std::cout << "Time stepping until tf = " << tf << std::endl;
+  if (mpi.rank == mpi.ROOT) {
+    std::cout << "Time stepping until tf = " << tf << std::endl;
+  }
   
   auto startTime = std::chrono::high_resolution_clock::now();
   
   // Loop over time steps
   for (int iStep = 0; iStep < timesteps; ++iStep) {
-    std::cout << "time = " << iStep*dt << std::endl;
+    if (mpi.rank == mpi.ROOT) {
+      std::cout << "time = " << iStep*dt << std::endl;
+    }
     
     if (iStep % dtSnaps == 0) {
-      std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
+      if (mpi.rank == mpi.ROOT) {
+	auto endTime = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> elapsed = endTime-startTime;
+	std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
+	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
+      }
       bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u");
       if (!success)
 	exit(-1);
@@ -429,7 +438,9 @@ void Solver::dgTimeStep() {
       */
       
       if (iStep/dtSnaps == 10) {
-	std::cout << "exiting for debugging purposes...\n";
+	if (mpi.rank == mpi.ROOT) {
+	  std::cout << "exiting for debugging purposes...\n";
+	}
 	exit(0);
       }
       
@@ -462,7 +473,9 @@ void Solver::dgTimeStep() {
   
   auto endTime = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = endTime-startTime;
-  std::cout << "Finished time stepping. Time elapsed = " << elapsed.count() << std::endl;
+  if (mpi.rank == mpi.ROOT) {
+    std::cout << "Finished time stepping. Time elapsed = " << elapsed.count() << std::endl;
+  }
   
 }
 
@@ -542,21 +555,9 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   // ks(:,istage) += Kv*fv(u)
   viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
-  //std::cout << "res = [" << std::endl;
-  //std::cout << residual << std::endl;
-  //std::cout << "];" << std::endl;
-  //std::cout << "res = reshape(res, [" << dofs << ", " << nStates*mesh.nElements << "]);" << std::endl;
-  
   // ks(:,istage) = Mel\ks(:,istage)
   int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
 			    Mel.data(), dofs, Mipiv.data(), residual.data(), dofs);
-  
-  //std::cout << "answer = [" << std::endl;
-  //std::cout << residual << std::endl;
-  //std::cout << "];" << std::endl;
-  //std::cout << "answer = reshape(answer, [" << dofs << ", " << nStates*mesh.nElements << "]);" << std::endl;
-  
-  //exit(0);
   
 }
 

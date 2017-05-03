@@ -8,6 +8,9 @@
 #include <numeric>
 #include <cmath>
 
+/** Uncomment in order to view error every time out-of-bounds exception is thrown */
+//#define DEBUG
+
 #define ARRAY_MAX_NDIM 7
 typedef int dgSize;
 
@@ -214,22 +217,70 @@ template <typename T> class array {
   }
 
   // Element access.
-  T& operator[](dgSize ix) const
-    { return _data[ix]; }
-  T& operator()(dgSize i0) const
-    { return _data[i0]; }
-  T& operator()(dgSize i0, dgSize i1) const
-    { return _data[i0+_strides[0]*i1]; }
-  T& operator()(dgSize i0, dgSize i1, dgSize i2) const
-    { return _data[i0+_strides[0]*i1+_strides[1]*i2]; }
-  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3) const
-    { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3]; }
-  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4) const
-    { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4]; }
-  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5) const
-    { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5]; }
-  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5, dgSize i6) const
-    { return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6]; }
+  T& operator[](dgSize ix) const {
+#ifdef DEBUG
+    if (ix >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[ix];
+  }
+  T& operator()(dgSize i0) const {
+#ifdef DEBUG
+    if (i0 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0];
+  }
+  T& operator()(dgSize i0, dgSize i1) const {
+#ifdef DEBUG
+    if (i0+_strides[0]*i1 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0+_strides[0]*i1];
+  }
+  T& operator()(dgSize i0, dgSize i1, dgSize i2) const {
+#ifdef DEBUG
+    if (i0+_strides[0]*i1+_strides[1]*i2 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0+_strides[0]*i1+_strides[1]*i2];
+  }
+  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3) const {
+#ifdef DEBUG
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3];
+  }
+  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4) const {
+#ifdef DEBUG
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4];
+  }
+  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5) const {
+#ifdef DEBUG
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5];
+  }
+  T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5, dgSize i6) const {
+#ifdef DEBUG
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6 >= _size) {
+      std::cerr << "out of bounds!" << std::endl;
+    }
+#endif
+    return _data[i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6];
+  }
 
   // Implicit cast to the data.
   operator T*() const { return _data; }
@@ -348,10 +399,27 @@ template <typename T> inline bool anynan(array<T> const& a) {
 
 template <typename T>
 inline std::ostream& operator<<(std::ostream& out, const array<T>& a) {
+  
+  dgSize totalSize = 1;
+  for (dgSize i = 1; i < a.ndim(); ++i) {
+    totalSize *= a.size(i);
+  }
+  
+  for (dgSize i = 0; i < totalSize; ++i) {
+    // print a(:,i)
+    for (dgSize j = 0; j < a.size(0)-1; ++j) {
+      out << a(j, i) << ", ";
+    }
+    out << a(a.size(0)-1, i) << "\n";
+  }
+  
+  /* // Old way: print out entire array as 1D array
   for (dgSize i = 0; i < a.size()-1; ++i) {
     out << a[i] << "\n";
   }
   out << a[a.size()-1];
+  */
+  
   return out;
 }
 

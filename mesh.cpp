@@ -99,6 +99,13 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
     
   }
   
+  for (int l = 0; l < MPIUtil::DIM; ++l) {
+    if (localNs[l] < 3) {
+      std::cerr << "ERROR: on rank " << mpi.rank << ": dimension in " << l << " MPI dimension is not enough to have interior elements!" << std::endl;
+      exit(-1);
+    }
+  }
+  
   // Distinguishing between boundary and interior elements
   nElements  = localNs[0]*localNs[1]*localNs[2];
   nIElements = (localNs[0]-2)*(localNs[1]-2)*(localNs[2]-2);
@@ -115,20 +122,25 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
     nGElements += mpiNBElems(iF);
   }
   
-  
   nVertices  = (localNs[0]+1)*(localNs[1]+1)*(localNs[2]+1);
   
   // Initialize vertices
   vertices.realloc(DIM, localNs[0]+1, localNs[1]+1, localNs[2]+1);
   for (int iz = localSs[2]; iz <= localEs[2]; ++iz) {
     double currZ = iz*(topRight.z-botLeft.z)/nz + botLeft.z;
+    int iz0 = iz - localSs[2];
+    
     for (int iy = localSs[1]; iy <= localEs[1]; ++iy) {
       double currY = iy*(topRight.y-botLeft.y)/ny + botLeft.y;
+      int iy0 = iy - localSs[1];
+      
       for (int ix = localSs[0]; ix <= localEs[0]; ++ix) {
 	double currX = ix*(topRight.x-botLeft.x)/nx + botLeft.x;
-	vertices(0, ix,iy,iz) = currX;
-	vertices(1, ix,iy,iz) = currY;
-	vertices(2, ix,iy,iz) = currZ;
+	int ix0 = ix - localSs[0];
+	
+	vertices(0, ix0,iy0,iz0) = currX;
+	vertices(1, ix0,iy0,iz0) = currY;
+	vertices(2, ix0,iy0,iz0) = currZ;
       }
     }
   }
@@ -138,7 +150,6 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   minDY = (topRight.y - botLeft.y)/ny;
   minDZ = (topRight.z - botLeft.z)/nz;
   
-  
   // Initialize elements-to-vertices array
   eToV.realloc(N_VERTICES, nElements);
   for (int iz = 0; iz < localNs[2]; ++iz) {
@@ -147,7 +158,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
     for (int iy = 0; iy < localNs[1]; ++iy) {
       int yOff1 = (iy  )*(localNs[0]+1);
       int yOff2 = (iy+1)*(localNs[0]+1);
-      for (int ix = 0; ix < localNs[2]; ++ix) {
+      for (int ix = 0; ix < localNs[0]; ++ix) {
 	int eIndex = ix + iy*localNs[0] + iz*localNs[0]*localNs[1];
 	int xOff1 = ix;
 	int xOff2 = ix+1;
@@ -305,7 +316,6 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
       }
     }
   }
-  
   
   for (int iz = 0; iz < localNs[2]; ++iz) {
     for (int iy = 0; iy < localNs[1]; ++iy) {

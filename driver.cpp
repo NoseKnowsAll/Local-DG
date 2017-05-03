@@ -14,23 +14,29 @@ int main(int argc, char *argv[]) {
   MPI_Init(&argc, &argv);
   MPIUtil mpi{};
   
-  std::cout << "initialized MPIUtil" << std::endl;
+  std::ostringstream oss;
+  oss << "coords = " << mpi.coords;
+  mpi.printString(oss.str());
+  
+  if (mpi.rank == mpi.ROOT) {
+    std::cout << "Initializing mesh..." << std::endl;
+  }
   
   //Point botLeft{-1,-1,-1};
   //Point topRight{1,1,1};
   //Mesh mesh{1,1,1, botLeft, topRight};
   
   //Mesh mesh{mpi};
-  Mesh mesh{10, 10, 10, Point{0.0,0.0,0.0}, Point{1.0,1.0,1.0}, mpi};
+  Mesh mesh{16, 16, 16, Point{0.0,0.0,0.0}, Point{1.0,1.0,1.0}, mpi};
   
-  std::cout << "initialized mesh" << std::endl;
+  if (mpi.rank == mpi.ROOT) {
+    std::cout << "Initializing solver..." << std::endl;
+  }
   
   int p = 2;
   double tf = 1.0;
   int dtSnaps = 30;
   Solver dgSolver{p, dtSnaps, tf, mesh};
-  
-  std::cout << "initialized solver" << std::endl;
   
   dgSolver.dgTimeStep();
   

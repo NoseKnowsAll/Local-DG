@@ -3,6 +3,8 @@
 
 #include <mpi.h>
 #include <iostream>
+#include <sstream>
+#include <string>
 
 #include "array.h"
 
@@ -18,6 +20,9 @@ public:
   
   /* Map MPI faces to the first MPIUtil::N_FACES faces in 3D */
   void initFaces(int meshDim);
+  
+  /** MPI helper function to print out a string */
+  void printString(const std::string& toPrint) const;
   
   /** This MPI rank's number */
   int rank;
@@ -47,6 +52,8 @@ public:
   const static int DIM = 3;
   /** Number of faces per MPI rank */
   const static int N_FACES = 2*DIM;
+  /** Root node rank */
+  const static int ROOT = 0;
   
 };
 

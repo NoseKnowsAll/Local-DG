@@ -8,9 +8,9 @@ MPIUtil::MPIUtil() {
   
   nps.realloc(DIM);
   for (int l = 0; l < DIM; ++l) {
-    nps[l] = 1; // TODO: Must be 0 before sending to MPI_Dims_create
+    nps[l] = 0; // TODO: Must be 0 before sending to MPI_Dims_create
   }
-  //MPI_Dims_create(np, Mesh::DIM, nps.data());
+  MPI_Dims_create(np, DIM, nps.data());
   
   int periods[DIM];
   for (int l = 0; l < DIM; ++l) {
@@ -20,7 +20,6 @@ MPIUtil::MPIUtil() {
   
   coords.realloc(DIM);
   MPI_Cart_coords(cartComm, rank, DIM, coords.data());
-  std::cout << "P: " << rank << ", My coordinates are " << coords << std::endl;
   
   neighbors.realloc(N_FACES);
   for (int l = 0; l < DIM; ++l) {
@@ -50,4 +49,17 @@ void MPIUtil::initFaces(int meshDim) {
   for (int l = 0; l < N_FACES; ++l) {
     faceMap(l) = meshDim - N_FACES + l;
   }
+}
+
+/** MPI helper function to print out a string */
+void MPIUtil::printString(const std::string& toPrint) const {
+  
+  for (int ir = 0; ir < np; ++ir) {
+    MPI_Barrier(cartComm);
+    if (rank == ir) {
+      std::cout << rank << ": " << toPrint << std::endl;
+    }
+  }
+  MPI_Barrier(cartComm);
+  
 }
