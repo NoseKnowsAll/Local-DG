@@ -73,124 +73,6 @@ void Solver::precomputeInterpMatrices() {
   
   interpolationMatrix3D(cheby3D, xQ3D, Interp3D);
   
-  /** TODO: Debugging interpolation matrix *
-  bool success = initXYZVFile("output/xyzu.txt", "u");
-  if (!success)
-    exit(-1);
-  success = exportToXYZVFile("output/xyzu.txt", mesh.globalCoords, u);
-  if (!success)
-    exit(-1);
-  
-  darray uInterp{nQ3D, nStates, mesh.nElements};
-  darray uInterp2D{Interp2D.size(0), nStates, Mesh::N_FACES, mesh.nElements};
-  interpolateU(u, uInterp2D, uInterp);
-  
-  // Scales and translates quadrature nodes into each element
-  darray globalQuads{Mesh::DIM, nQ3D, mesh.nElements};
-  for (int k = 0; k < mesh.nElements; ++k) {
-    darray botLeft{&mesh.vertices(0, mesh.eToV(0, k)), Mesh::DIM};
-    darray topRight{&mesh.vertices(0, mesh.eToV(7, k)), Mesh::DIM};
-    
-    for (int iN = 0; iN < nQ3D; ++iN) {
-      for (int l = 0; l < Mesh::DIM; ++l) {
-	// amount in [0,1] to scale lth dimension
-	double scale = .5*(xQ3D(l,iN)+1.0);
-	globalQuads(l,iN,k) = botLeft(l)+scale*(topRight(l)-botLeft(l));
-      }
-    }
-  }
-  
-  success = initXYZVFile("output/xyzuInterp.txt", "uInterp3D");
-  if (!success)
-    exit(-1);
-  success = exportToXYZVFile("output/xyzuInterp.txt", globalQuads, uInterp);
-  if (!success)
-    exit(-1);
-  
-  // Scales and translates quadrature nodes into each element
-  int size1D = (int)std::ceil(order+1/2.0);
-  darray globalQuads2D{Mesh::DIM, size1D, size1D, Mesh::N_FACES, mesh.nElements};
-  for (int k = 0; k < mesh.nElements; ++k) {
-    darray botLeft{&mesh.vertices(0, mesh.eToV(0, k)), Mesh::DIM};
-    darray topRight{&mesh.vertices(0, mesh.eToV(7, k)), Mesh::DIM};
-    
-    // -x direction face
-    for (int iz = 0; iz < size1D; ++iz) {
-      for (int iy = 0; iy < size1D; ++iy) {
-	globalQuads2D(0,iy,iz, 0,k) = -1.0;
-	globalQuads2D(1,iy,iz, 0,k) = xQ2D(0,iy,iz);
-	globalQuads2D(2,iy,iz, 0,k) = xQ2D(1,iy,iz);
-      }
-    }
-  
-    // +x direction face
-    for (int iz = 0; iz < size1D; ++iz) {
-      for (int iy = 0; iy < size1D; ++iy) {
-	globalQuads2D(0,iy,iz, 1,k) = 1.0;
-	globalQuads2D(1,iy,iz, 1,k) = xQ2D(0,iy,iz);
-	globalQuads2D(2,iy,iz, 1,k) = xQ2D(1,iy,iz);
-      }
-    }
-    
-    // -y direction face
-    for (int iz = 0; iz < size1D; ++iz) {
-      for (int ix = 0; ix < size1D; ++ix) {
-	globalQuads2D(0,ix,iz, 2,k) = xQ2D(0,ix,iz);
-	globalQuads2D(1,ix,iz, 2,k) = -1.0;
-	globalQuads2D(2,ix,iz, 2,k) = xQ2D(1,ix,iz);
-      }
-    }
-    
-    // +y direction face
-    for (int iz = 0; iz < size1D; ++iz) {
-      for (int ix = 0; ix < size1D; ++ix) {
-	globalQuads2D(0,ix,iz, 3,k) = xQ2D(0,ix,iz);
-	globalQuads2D(1,ix,iz, 3,k) = 1.0;
-	globalQuads2D(2,ix,iz, 3,k) = xQ2D(1,ix,iz);
-      }
-    }
-    
-    // -z direction face
-    for (int iy = 0; iy < size1D; ++iy) {
-      for (int ix = 0; ix < size1D; ++ix) {
-	globalQuads2D(0,ix,iy, 4,k) = xQ2D(0,ix,iy);
-	globalQuads2D(1,ix,iy, 4,k) = xQ2D(1,ix,iy);
-	globalQuads2D(2,ix,iy, 4,k) = -1.0;
-      }
-    }
-    
-    // +z direction face
-    for (int iy = 0; iy < size1D; ++iy) {
-      for (int ix = 0; ix < size1D; ++ix) {
-	globalQuads2D(0,ix,iy, 5,k) = xQ2D(0,ix,iy);
-	globalQuads2D(1,ix,iy, 5,k) = xQ2D(1,ix,iy);
-	globalQuads2D(2,ix,iy, 5,k) = 1.0;
-      }
-    }
-    
-    for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
-      for (int iy = 0; iy < size1D; ++iy) {
-	for (int ix = 0; ix < size1D; ++ix) {
-	  for (int l = 0; l < Mesh::DIM; ++l) {
-	    // amount in [0,1] to scale lth dimension
-	    double scale = .5*(globalQuads2D(l,ix,iy,iF,k)+1.0);
-	    globalQuads2D(l,ix,iy,iF,k) = botLeft(l)+scale*(topRight(l)-botLeft(l));
-	  }
-	}
-      }
-    }
-  }
-  
-  success = initXYZVFile("output/xyzuInterp2D.txt", "uInterp2D");
-  if (!success)
-    exit(-1);
-  success = exportToXYZVFile("output/xyzuInterp2D.txt", globalQuads2D, uInterp2D);
-  if (!success)
-    exit(-1);
-  
-  
-  exit(0);
-  /** END TODO */
 }
 
 /** Precomputes all the local matrices used by Local DG method */
@@ -393,6 +275,11 @@ void Solver::dgTimeStep() {
   int nBElems = max(mesh.mpiNBElems);
   darray toSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   darray toRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
+  /**
+     Requests for use in MPI sends/receives during rk4Rhs()
+     2*face == send, 2*face+1 == recv
+  */
+  MPI_Request rk4Reqs[2*MPIUtil::N_FACES];
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Time stepping until tf = " << tf << std::endl;
@@ -454,7 +341,7 @@ void Solver::dgTimeStep() {
       
       // Updates ks(:,istage) = rhs(uCurr) based on DG method
       rk4Rhs(uCurr, uInterp2D, uInterp3D, Dus, DuInterp2D, DuInterp3D,
-	     toSend, toRecv, ks, istage);
+	     toSend, toRecv, rk4Reqs, ks, istage);
       
     }
     
@@ -512,10 +399,10 @@ void Solver::rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks,
 */
 void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
 		    darray& Dus, darray& DuInterp2D, darray& DuInterp3D, 
-		    darray& toSend, darray& toRecv, darray& ks, int istage) const {
+		    darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, darray& ks, int istage) const {
   
   // Interpolate uCurr once
-  interpolate(uCurr, uInterp2D, uInterp3D, toSend, toRecv, 1);
+  interpolate(uCurr, uInterp2D, uInterp3D, toSend, toRecv, rk4Reqs, 1);
   
   // First solve for the Dus in each dimension according to:
   // Du_l = Mel\(-S_l*u + fluxesL(u))
@@ -535,7 +422,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   }
   
   // Interpolate Dus once
-  interpolate(Dus, DuInterp2D, DuInterp3D, toSend, toRecv, Mesh::DIM);
+  interpolate(Dus, DuInterp2D, DuInterp3D, toSend, toRecv, rk4Reqs, Mesh::DIM);
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // ks(:,istage) = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
@@ -566,7 +453,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
    Interpolates u/Du onto 3D quadrature points and stores in u/DuInterp3D.
 */
 void Solver::interpolate(const darray& curr, darray& toInterp2D, darray& toInterp3D,
-			 darray& toSend, darray& toRecv, int dim) const {
+			 darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const {
   
   // First grab u on faces and pack into array uOnFaces
   int nFN = mesh.nFNodes;
@@ -590,16 +477,7 @@ void Solver::interpolate(const darray& curr, darray& toInterp2D, darray& toInter
 		0.0, &toInterp2D(0,0,0,0,l), nQ2D);
   }
   
-  
-  /**
-     Requests for use in MPI sends/receives during rk4Rhs()
-     2*face == send, 2*face+1 == recv
-  */
-  MPI_Request rk4Reqs[2*MPIUtil::N_FACES];
   mpiStartComm(toInterp2D, dim, toSend, toRecv, rk4Reqs);
-  
-  // TODO: move this after all interior elements have been computed on
-  mpiEndComm(toInterp2D, dim, toRecv, rk4Reqs);
   
   // 3D interpolation toInterp3D = Interp3D*curr
   int nQ3D = Interp3D.size(0);
@@ -607,44 +485,10 @@ void Solver::interpolate(const darray& curr, darray& toInterp2D, darray& toInter
 	      nQ3D, nStates*mesh.nElements*dim, dofs, 1.0, Interp3D.data(), dofs,
 	      curr.data(), dofs, 0.0, toInterp3D.data(), nQ3D);
   
-}
-
-/**
-   Interpolates Dus on faces to 2D quadrature points and stores in DuInterp2D.
-   Interpolates Dus onto 3D quadrature points and stores in DuInterp3D.
-   TODO: combine this function with interpolateUs
-*
-void Solver::interpolateDus(const darray& Dus, darray& DuInterp2D, darray& DuInterp3D) const {
-  
-  // First grab u on faces and pack into array uOnFaces
-  int nFN = mesh.nFNodes;
-  int nQ2D = mesh.nFQNodes;
-  darray DuOnFaces{nFN, nStates, Mesh::N_FACES, mesh.nElements, Mesh::DIM};
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    for (int iK = 0; iK < mesh.nElements; ++iK) {
-      for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
-	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iFN = 0; iFN < nFN; ++iFN) {
-	    DuOnFaces(iFN, iS, iF, iK, l) = Dus(mesh.efToN(iFN, iF), iS, iK, l);
-	  }
-	}
-      }
-    }
-  }
-  // 2D interpolation DuInterp2D = Interp2D*DuOnFaces
-  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQ2D, nStates*Mesh::N_FACES*mesh.nElements*Mesh::DIM, nFN, 1.0,
-	      Interp2D.data(), nQ2D, DuOnFaces.data(), nFN, 
-	      0.0, DuInterp2D.data(), nQ2D);
-  
-  // 3D interpolation DuInterp3D = Interp3D*Dus
-  int nQ3D = Interp3D.size(0);
-  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQ3D, nStates*mesh.nElements*Mesh::DIM, dofs, 1.0, Interp3D.data(), dofs,
-	      Dus.data(), dofs, 0.0, DuInterp3D.data(), nQ3D);
+  // TODO: move after all interior elements have been computed on
+  mpiEndComm(toInterp2D, dim, toRecv, rk4Reqs);
   
 }
-*/
 
 
 /**
