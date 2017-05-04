@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
   //Mesh mesh{1,1,1, botLeft, topRight};
   
   //Mesh mesh{mpi};
-  Mesh mesh{16, 16, 16, Point{0.0,0.0,0.0}, Point{1.0,1.0,1.0}, mpi};
+  Mesh mesh{32, 32, 32, Point{0.0,0.0,0.0}, Point{1.0,1.0,1.0}, mpi};
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing solver..." << std::endl;

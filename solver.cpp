@@ -300,7 +300,8 @@ void Solver::dgTimeStep() {
 	std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
-      bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u");
+      
+      bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u", nStates);
       if (!success)
 	exit(-1);
       success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);

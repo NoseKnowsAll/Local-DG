@@ -44,7 +44,7 @@ bool exportToSSVFile(const std::string& filename, const darray& arr, int dim0, i
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview.
 */
-bool initXYZVFile(const std::string& filename, const std::string& valuename) {
+bool initXYZVFile(const std::string& filename, const std::string& valuename, int nStates) {
   
   std::ofstream outFile(filename, std::ios::out);
   if (outFile.fail()) {
@@ -52,7 +52,11 @@ bool initXYZVFile(const std::string& filename, const std::string& valuename) {
     return false;
   }
   
-  outFile << "X, Y, Z, " << valuename << std::endl;
+  outFile << "X, Y, Z, ";
+  for (int iS = 0; iS < nStates-1; ++iS) {
+    outFile << valuename << iS << ", ";
+  }
+  outFile << valuename << nStates-1 << std::endl;
   
   return true;
   
@@ -62,11 +66,11 @@ bool initXYZVFile(const std::string& filename, const std::string& valuename) {
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview in a time series output.
 */
-bool initXYZVFile(const std::string& filename, int timeseries, const std::string& valuename) {
+bool initXYZVFile(const std::string& filename, int timeseries, const std::string& valuename, int nStates) {
   std::ostringstream oss;
   oss << filename << "." << timeseries;
   
-  return initXYZVFile(oss.str(), valuename);
+  return initXYZVFile(oss.str(), valuename, nStates);
 }
 
 /**
@@ -82,18 +86,26 @@ bool exportToXYZVFile(const std::string& filename, const darray& globalCoords, c
     return false;
   }
   
-  // Total size of array compressed into one column
+  // Assumes array is of size (:,nStates;:)
+  int dofs = arr.size(0);
+  int nStates = arr.size(1);
   long long totalSize = 1;
-  for (int j = 1; j < globalCoords.ndim(); ++j) {
-    totalSize *= globalCoords.size(j);
+  for (int j = 2; j < arr.ndim(); ++j) {
+    totalSize *= arr.size(j);
   }
   
   for (long long j = 0; j < totalSize; ++j) {
-    for (int l = 0; l < globalCoords.size(0); ++l) {
-      outFile << globalCoords(l, j) << ", ";
+    for (int i = 0; i < dofs; ++i) {
+      
+      for (int l = 0; l < globalCoords.size(0); ++l) {
+	outFile << globalCoords(l, i, j) << ", ";
+      }
+      
+      for (int iS = 0; iS < nStates-1; ++iS) {
+	outFile << arr(i, iS, j) << ", ";
+      }
+      outFile << arr(i, nStates-1, j) << std::endl;
     }
-    // Assumes array is of same size as globalCoords(1,2:end)
-    outFile << arr(j) << "\n";
   }
   return true;
 }

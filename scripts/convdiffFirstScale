@@ -1,0 +1,29 @@
+#!/bin/bash -l
+#SBATCH -p normal
+#SBATCH -t 01:00:00
+#SBATCH -N 16
+#SBATCH -n 256
+#SBATCH -o output/convdiffScale.%j.out
+#SBATCH -e output/convdiffScale.%j.err
+
+EXEPATH=/home1/04685/tg839843/CS267/final/Local-DG/
+EXE=${EXEPATH}driver
+NPROC=1
+
+OUTPUT=${EXEPATH}output/testOutput.out
+
+echo "Starting tests" > ${OUTPUT}
+
+POWERS=`seq 0 5`
+for ip in ${POWERS};
+do
+    NSOCKETS=$((2**${ip}))
+    echo "Running on ${NSOCKETS} sockets"
+    
+    NP=$((8*${NSOCKETS}))
+    
+    echo "ibrun -n ${NP} -o 0 ${EXE} >> ${OUTPUT}"
+    ibrun -n ${NP} -o 0 ${EXE} >> ${OUTPUT}
+done  
+
+
