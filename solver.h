@@ -55,18 +55,24 @@ private:
 		   darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const;
   
   void localDGFlux(const darray& uInterp2D, darray& residuals) const;
-  inline double numericalFluxL(double uK, double uN, double normalK) const;
   
   void convectDGFlux(const darray& uInterp2D, darray& residual) const;
   void convectDGVolume(const darray& uInterp3D, darray& residual) const;
-  inline double numericalFluxC(double uK, double uN, const darray& normalK) const;
-  inline double fluxC(double uK, int l) const;
   
   void viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, darray& residual) const;
   void viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, darray& residual) const;
-  inline double numericalFluxV(double uK, double uN, const darray& DuK, const darray& DuN, 
-			       const darray& normalK) const;
-  inline double fluxV(double uK, const darray& DuK, int l) const;
+  
+  
+  inline double numericalFluxL(double uK, double uN, double normalK) const;
+  void numericalFluxC(const darray& uN, const darray& uK, 
+		      const darray& normalK, darray& fluxes) const;
+  void numericalFluxV(const darray& uN, const darray& uK, 
+		      const darray& DuN, const darray& DuK, 
+		      const darray& normalK, darray& fluxes) const;
+  
+  inline void fluxC(const darray& uK, darray& fluxes) const;
+  inline void fluxV(const darray& uK, const darray& DuK, darray& fluxes) const;
+  
   
   void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
   void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;

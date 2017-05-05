@@ -405,6 +405,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   // Interpolate uCurr once
   interpolate(uCurr, uInterp2D, uInterp3D, toSend, toRecv, rk4Reqs, 1);
   
+  /*
   // First solve for the Dus in each dimension according to:
   // Du_l = Mel\(-S_l*u + fluxesL(u))
   Dus.fill(0.0);
@@ -424,6 +425,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   
   // Interpolate Dus once
   interpolate(Dus, DuInterp2D, DuInterp3D, toSend, toRecv, rk4Reqs, Mesh::DIM);
+  */
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // ks(:,istage) = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
@@ -432,7 +434,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   residual.fill(0.0);
   
   convectDGFlux(uInterp2D, residual);
-  viscousDGFlux(uInterp2D, DuInterp2D, residual);
+  //viscousDGFlux(uInterp2D, DuInterp2D, residual);
   
   // ks(:,istage) = -Fc(u)-Fv(u,Dus)
   cblas_dscal(dofs*nStates*mesh.nElements, -1.0, residual.data(), 1);
@@ -441,7 +443,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   convectDGVolume(uInterp3D, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  viscousDGVolume(uInterp3D, DuInterp3D, residual);
+  //viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
   // ks(:,istage) = Mel\ks(:,istage)
   int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
@@ -502,12 +504,12 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
   int nFN = mesh.nFNodes;
   int nQ2D = mesh.nFQNodes;
   
+  // Initialize flux along faces
+  darray fStar{nQ2D, nStates};
+  darray faceContributions{nFN, nStates};
+  
   // Loop over all elements
   for (int iK = 0; iK < mesh.nElements; ++iK) {
-    
-    // Initialize flux along faces
-    darray fStar{nQ2D, nStates, Mesh::N_FACES, Mesh::DIM}; // TODO: should we move this out of for loop
-    darray faceContributions{nFN, nStates, Mesh::N_FACES, Mesh::DIM};
     
     // There are l equations to handle in this flux term
     for (int l = 0; l < Mesh::DIM; ++l) {
@@ -526,41 +528,26 @@ void Solver::localDGFlux(const darray& uInterp2D, darray& residuals) const {
 	    auto uK = uInterp2D(iFQ, iS, iF, iK);
 	    auto uN = uInterp2D(iFQ, iS, nF, nK);
 	    
-	    fStar(iFQ, iS, iF, l) = numericalFluxL(uK, uN, normalK);
+	    fStar(iFQ, iS) = numericalFluxL(uK, uN, normalK);
 	  }
 	}
 	
 	// Flux contribution = Kels2D(:,l)'*fstar
 	cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
 		    nFN, nStates, nQ2D, 1.0, &Kels2D(0,0,iF/2), nQ2D, 
-		    &fStar(0,0,iF,l), nQ2D, 
-		    0.0, &faceContributions(0,0,iF,l), nFN);
+		    fStar.data(), nQ2D, 
+		    0.0, faceContributions.data(), nFN);
 	
 	// Add up face contributions into global residuals array
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iFN = 0; iFN < nFN; ++iFN) {
-	    residuals(mesh.efToN(iFN,iF), iS, iK, l) += faceContributions(iFN, iS, iF, l);
+	    residuals(mesh.efToN(iFN,iF), iS, iK, l) += faceContributions(iFN, iS);
 	  }
 	}
+	
       }
-      
     }
   }
-  
-}
-
-/** Evaluates the local DG flux function for this PDE at a given value uHere */
-inline double Solver::numericalFluxL(double uK, double uN, double normalK) const {
-  
-  auto fK = uK;
-  auto fN = uN;
-  
-  // TODO: In Lax-Friedrichs formulation, this appears to also be the Roe A value?
-  //double C = std::abs((fN-fK)/(uN-uK));
-  //double result = (fK+fN)/2.0 + (C/2.0)*(-uN*normalK + uK*normalK);
-  
-  double result = (normalK < 0.0 ? fK : fN)*normalK;
-  return result;
   
 }
 
@@ -575,69 +562,56 @@ void Solver::convectDGFlux(const darray& uInterp2D, darray& residual) const {
   int nFN = mesh.nFNodes;
   int nQ2D = mesh.nFQNodes;
   
+  // Initialize flux along faces
+  darray fStar{nQ2D, nStates};
+  darray faceContributions{nFN, nStates};
+  
+  darray fluxes{nStates};
+  darray uK{nStates};
+  darray uN{nStates};
+  
   // Loop over all elements
   for (int iK = 0; iK < mesh.nElements; ++iK) {
-    
-    // Initialize flux along faces
-    darray fStar{nQ2D, nStates, Mesh::N_FACES}; // TODO: should we move this out of for loop
-    darray faceContributions{nFN, nStates, Mesh::N_FACES};
-    
-    // For every face, compute fstar = fc*(Interp2D*u)
     for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
       
+      // For every face, compute fstar = fc*(Interp2D*u)
       auto nF = mesh.eToF(iF, iK);
       auto nK = mesh.eToE(iF, iK);
       
       darray normalK{&mesh.normals(0, iF, iK), 3};
       
-      // Must compute nStates of these flux integrals per face
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	  auto uK = uInterp2D(iFQ, iS, iF, iK);
-	  auto uN = uInterp2D(iFQ, iS, nF, nK);
-	  
-	  fStar(iFQ, iS, iF) = numericalFluxC(uK, uN, normalK);
+      for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
+	
+	// Get all state variables at this point
+	for (int iS = 0; iS < nStates; ++iS) {
+	  uK(iS) = uInterp2D(iFQ, iS, iF, iK);
+	  uN(iS) = uInterp2D(iFQ, iS, nF, nK);
 	}
+	// Compute fluxes = fc*(u+,u-)'*n
+	numericalFluxC(uN, uK, normalK, fluxes);
+	// Copy flux data into fStar
+	for (int iS = 0; iS < nStates; ++iS) {
+	  fStar(iFQ, iS) = fluxes(iS);
+	}
+	
       }
       
       // Flux contribution = Kels2D(:,l)'*fstar
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
 		  nFN, nStates, nQ2D, 1.0, &Kels2D(0,0,iF/2), nQ2D, 
-		  &fStar(0,0,iF), nQ2D, 
-		  0.0, &faceContributions(0,0,iF), nFN);
+		  fStar.data(), nQ2D, 
+		  0.0, faceContributions.data(), nFN);
       
       // Add up face contributions into global residual array
       for (int iS = 0; iS < nStates; ++iS) {
 	for (int iFN = 0; iFN < nFN; ++iFN) {
-	  residual(mesh.efToN(iFN,iF), iS, iK) += faceContributions(iFN, iS, iF);
+	  residual(mesh.efToN(iFN,iF), iS, iK) += faceContributions(iFN, iS);
 	}
       }
+      
     }
-    
   }
   
-}
-
-/** Evaluates the convection DG flux function for this PDE using upwinding */
-inline double Solver::numericalFluxC(double uK, double uN, const darray& normalK) const {
-  
-  double result = 0.0;
-  
-  // TODO: fc(u) = a*u right now. This depends on PDE!
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    auto fK = fluxC(uK, l);
-    auto fN = fluxC(uN, l);
-    // upwinding assuming a[l] is always positive
-    result += (normalK(l) > 0.0 ? fK : fN)*normalK(l);
-  }
-  
-  return result;
-  
-}
-
-/** Evaluates the actual convection flux function for the PDE */
-inline double Solver::fluxC(double uK, int l) const {
-  return a[l]*uK;  
 }
 
 /** Evaluates the volume integral term for convection in the RHS */
@@ -645,22 +619,40 @@ void Solver::convectDGVolume(const darray& uInterp3D, darray& residual) const {
   
   int nQ3D = Interp3D.size(0);
   
-  // residual += Kels(:, l)*fc_l(uInterp3D)
-  darray fc{nQ3D, nStates, mesh.nElements, Mesh::DIM};
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    
-    for (int k = 0; k < mesh.nElements; ++k) {
+  // Contains all flux information
+  darray fc{nStates, nQ3D, mesh.nElements, Mesh::DIM};
+  
+  // Temporary arrays for computing fluxes
+  darray fluxes{nStates,Mesh::DIM};
+  darray uK{nStates};
+  
+  // Loop over all elements, points
+  for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iQ = 0; iQ < nQ3D; ++iQ) {
+      
+      // Copy data into uK
       for (int iS = 0; iS < nStates; ++iS) {
-	for (int iQ = 0; iQ < nQ3D; ++iQ) {
-	  fc(iQ,iS,k,l) = fluxC(uInterp3D(iQ,iS,k), l);
+	uK(iS) = uInterp3D(iQ,iS,k);
+      }
+      // Compute fluxes
+      fluxC(uK, fluxes);
+      // Copy data into fc
+      for (int l = 0; l < Mesh::DIM; ++l) {
+	for (int iS = 0; iS < nStates; ++iS) {
+	  fc(iS,iQ,k,l) = fluxes(iS, l);
 	}
       }
+      
     }
-    
+  }
+  
+  // TODO: is it faster to do matrix vector multiplication instead of having to reorder data into huge fc array?
+  
+  // residual += Kels(:, l)*fc_l(uInterp3D)
+  for (int l = 0; l < Mesh::DIM; ++l) {
     cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
 		dofs, nStates*mesh.nElements, nQ3D, 1.0, &Kels(0,0,l), nQ3D,
 		&fc(0,0,0,l), nQ3D, 1.0, residual.data(), dofs);
-    
   }
   
 }
@@ -677,47 +669,59 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
   int nFN = mesh.nFNodes;
   int nQ2D = mesh.nFQNodes;
   
+  // Initialize flux along faces
+  darray fStar{nQ2D, nStates};
+  darray faceContributions{nFN, nStates};
+  
+  darray fluxes{nStates};
+  darray uK{nStates};
+  darray uN{nStates};
+  darray DuK{nStates, Mesh::DIM};
+  darray DuN{nStates, Mesh::DIM};
+  
   // Loop over all elements
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     
-    // Initialize flux along faces
-    darray fStar{nQ2D, nStates, Mesh::N_FACES}; // TODO: should we move this out of for loop
-    darray faceContributions{nFN, nStates, Mesh::N_FACES};
-    
-    // For every face, compute flux = integrate over face (fstar*phi_i)
     for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
       
+      // For every face, compute fstar = fv*(Interp2D*u,Interp2D*Du)
       auto nF = mesh.eToF(iF, iK);
       auto nK = mesh.eToE(iF, iK);
       
       darray normalK{&mesh.normals(0, iF, iK), 3};
       
-      // Must compute nStates of these flux integrals per face
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
-	  auto uK = uInterp2D(iFQ, iS, iF, iK);
-	  auto uN = uInterp2D(iFQ, iS, nF, nK);
-	  darray DuK{Mesh::DIM};
-	  darray DuN{Mesh::DIM};
-	  for (int l = 0; l < Mesh::DIM; ++l) {
-	    DuK(l) = DuInterp2D(iFQ, iS, iF, iK, l);
-	    DuN(l) = DuInterp2D(iFQ, iS, nF, nK, l);
-	  }
-	  
-	  fStar(iFQ, iS, iF) = numericalFluxV(uK, uN, DuK, DuN, normalK);
+      for (int iFQ = 0; iFQ < nQ2D; ++iFQ) {
+	
+	// Copy all state variables at this point into uK,uN,DuK,DuN
+	for (int iS = 0; iS < nStates; ++iS) {
+	  uK(iS) = uInterp2D(iFQ, iS, iF, iK);
+	  uN(iS) = uInterp2D(iFQ, iS, nF, nK);
 	}
+	for (int l = 0; l < Mesh::DIM; ++l) {
+	  for (int iS = 0; iS < nStates; ++iS) {
+	    DuK(iS,l) = DuInterp2D(iFQ, iS, iF, iK, l);
+	    DuN(iS,l) = DuInterp2D(iFQ, iS, nF, nK, l);
+	  }
+	}
+	// Compute fluxes = fv*(u+,u-,Du+,Du-)'*n
+	numericalFluxV(uN, uK, DuN, DuK, normalK, fluxes);
+	// Copy flux data into fStar
+	for (int iS = 0; iS < nStates; ++iS) {
+	  fStar(iFQ, iS) = fluxes(iS);
+	}
+	
       }
       
       // Flux contribution = Kels2D(:,l)'*fstar
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
 		  nFN, nStates, nQ2D, 1.0, &Kels2D(0,0,iF/2), nQ2D, 
-		  &fStar(0,0,iF), nQ2D, 
-		  0.0, &faceContributions(0,0,iF), nFN);
+		  fStar.data(), nQ2D, 
+		  0.0, faceContributions.data(), nFN);
       
       // Add up face contributions into global residual array
       for (int iS = 0; iS < nStates; ++iS) {
 	for (int iFN = 0; iFN < nFN; ++iFN) {
-	  residual(mesh.efToN(iFN,iF), iS, iK) += faceContributions(iFN, iS, iF);
+	  residual(mesh.efToN(iFN,iF), iS, iK) += faceContributions(iFN, iS);
 	}
       }
     }
@@ -730,68 +734,144 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
 void Solver::viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, darray& residual) const {
   
   int nQ3D = Interp3D.size(0);
+  // Contains all flux information
+  darray fv{nStates, nQ3D, mesh.nElements, Mesh::DIM};
   
-  // residual += Kels(:, l)*fv_l(uInterp3D)
-  darray fv{nQ3D, nStates, mesh.nElements, Mesh::DIM};
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    
-    for (int k = 0; k < mesh.nElements; ++k) {
+  // Temporary arrays for computing fluxes
+  darray fluxes{nStates, Mesh::DIM};
+  darray uK{nStates};
+  darray DuK{nStates, Mesh::DIM};
+  
+  // Loop over all elements, points
+  for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iQ = 0; iQ < nQ3D; ++iQ) {
+      
+      // Copy data into uK,DuK
       for (int iS = 0; iS < nStates; ++iS) {
-	for (int iQ = 0; iQ < nQ3D; ++iQ) {
-
-	  auto uK = uInterp3D(iQ,iS,k);
-	  darray DuK{Mesh::DIM};
-	  for (int l2 = 0; l2 < Mesh::DIM; ++l2) {
-	    DuK(l2) = DuInterp3D(iQ,iS,k,l2);
-	  }
-	  fv(iQ,iS,k,l) = fluxV(uK, DuK, l);
+	uK(iS) = uInterp3D(iQ,iS,k);
+      }
+      for (int l = 0; l < Mesh::DIM; ++l) {
+	for (int iS = 0; iS < nStates; ++iS) {
+	  DuK(iS,l) = DuInterp3D(iQ,iS,k,l);
 	}
       }
+      
+      // Compute fluxes
+      fluxV(uK, DuK, fluxes);
+      // Copy data into fv
+      for (int l = 0; l < Mesh::DIM; ++l) {
+	for (int iS = 0; iS < nStates; ++iS) {
+	  fv(iS,iQ,k,l) = fluxes(iS, l);
+	}
+      }
+      
     }
-    
+  }
+  
+  // TODO: is it faster to do matrix vector multiplication instead of having to reorder data into huge fc array?
+  
+  // residual += Kels(:, l)*fc_l(uInterp3D)
+  for (int l = 0; l < Mesh::DIM; ++l) {
     cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
 		dofs, nStates*mesh.nElements, nQ3D, 1.0, &Kels(0,0,l), nQ3D,
 		&fv(0,0,0,l), nQ3D, 1.0, residual.data(), dofs);
-    
   }
   
 }
 
-/** Evaluates the viscous DG flux function for this PDE using upwinding */
-inline double Solver::numericalFluxV(double uK, double uN, const darray& DuK, const darray& DuN, const darray& normalK) const {
+/** Evaluates the local DG flux function for this PDE using a positive-looking switch */
+inline double Solver::numericalFluxL(double uK, double uN, double normalK) const {
   
-  double result = 0.0;
+  auto fK = uK;
+  auto fN = uN;
+  return (normalK < 0.0 ? fK : fN)*normalK;
   
+}
+
+/**
+   Evaluates the convection numerical flux function for this PDE for all states, 
+   dotted with the normal, storing output in fluxes.
+   TODO: replace with roe3d
+*/
+void Solver::numericalFluxC(const darray& uN, const darray& uK, 
+			    const darray& normalK, darray& fluxes) const {
+  
+  darray FK{nStates,Mesh::DIM};
+  darray FN{nStates,Mesh::DIM};
+  
+  // TODO: fc(u) = a*u right now. This depends on PDE!
+  fluxC(uK, FK);
+  fluxC(uN, FN);
+  
+  fluxes.fill(0.0);
   for (int l = 0; l < Mesh::DIM; ++l) {
-    auto fK = fluxV(uK, DuK, l);
-    auto fN = fluxV(uN, DuN, l);
-    // upwinding assuming a[l] is always positive
-    result += (normalK(l) > 0.0 ? fK : fN)*normalK(l);
+    for (int iS = 0; iS < nStates; ++iS) {
+      // upwinding assuming a[l] is always positive
+      fluxes(iS) += (normalK(l) > 0.0 ? FK(iS, l) : FN(iS, l))*normalK(l);
+    }
   }
   
-  return result;
+}
+
+/**
+   Evaluates the viscous numerical flux function for this PDE for all states, 
+   dotted with the normal, storing output in fluxes.
+*/
+void Solver::numericalFluxV(const darray& uN, const darray& uK, 
+			    const darray& DuN, const darray& DuK, 
+			    const darray& normalK, darray& fluxes) const {
   
+  // TODO: figure out exactly which uK, uN, DuK, DuN to call fluxV with
+  // Right now, we're using some weird switch
+  darray Flux{nStates, Mesh::DIM};
+  
+  bool kWins;
+  double sum = 0.0;
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    sum += normalK(l);
+    
+  }
+  kWins = (sum > 0);
+  
+  if (kWins) {
+    fluxV(uK, DuN, Flux);
+  }
+  else {
+    fluxV(uN, DuK, Flux);
+  }
+  
+  fluxes.fill(0.0);
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    for (int iS = 0; iS < nStates; ++iS) {
+      fluxes(iS) -= Flux(iS, l)*normalK(l);
+    }
+  }
+  
+}
+
+/** Evaluates the actual convection flux function for the PDE */
+inline void Solver::fluxC(const darray& uK, darray& fluxes) const {
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    fluxes(0, l) = a[l]*uK(l);
+    
+    // TODO: try 2 states
+  }
 }
 
 /** Evaluates the actual viscosity flux function for the PDE */
-inline double Solver::fluxV(double uK, const darray& DuK, int l) const {
-  double eps = 1e-2;
+inline void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) const {
   // TODO: fv(u,Du) = a*u-eps*sum(DuK) right now. This depends on PDE!
-  switch(l) {
-  case 0:
-    return - eps*a[l]*DuK(l);
-    break;
-  case 1:
-    return - eps*a[l]*DuK(l);
-      //(DuK(0) + DuK(1) + DuK(2));
-    break;
-  case 2:
-    return - eps*a[l]*DuK(l);
-    break;
-  default:
-    std::cerr << "How the hell...?" << std::endl;
-    return 0.0;
+  double eps = 1e-2;
+  
+  fluxes.fill(0.0);
+  /*
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    fluxes(0, l) = eps*a[l]*DuK(l);
+    
+    // TODO: try two states
   }
+  */
+  
 }
 
 
@@ -870,3 +950,4 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
   }
   
 }
+
