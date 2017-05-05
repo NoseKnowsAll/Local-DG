@@ -42,7 +42,7 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   mpi.initFaces(Mesh::N_FACES);
   
   // TODO: DEPENDS ON PDE
-  nStates = 1;
+  nStates = 3;
   u.realloc(dofs, nStates, mesh.nElements);
   initialCondition(); // sets u
   
@@ -180,20 +180,20 @@ void Solver::initialCondition() {
   
   // Sin function allowing for periodic initial condition
   for (int k = 0; k < mesh.nElements; ++k) {
-    for (int iS = 0; iS < nStates; ++iS) {
-      for (int iz = 0; iz < order+1; ++iz) {
-	for (int iy = 0; iy < order+1; ++iy) {
-	  for (int ix = 0; ix < order+1; ++ix) {
-	    int vID = ix + iy*(order+1) + iz*(order+1)*(order+1);
+    for (int iz = 0; iz < order+1; ++iz) {
+      for (int iy = 0; iy < order+1; ++iy) {
+	for (int ix = 0; ix < order+1; ++ix) {
+	  int vID = ix + iy*(order+1) + iz*(order+1)*(order+1);
+	  
+	  double x = mesh.globalCoords(0,vID,k);
+	  double y = mesh.globalCoords(1,vID,k);
+	  double z = mesh.globalCoords(2,vID,k);
 	    
-	    double x = mesh.globalCoords(0,vID,k);
-	    double y = mesh.globalCoords(1,vID,k);
-	    double z = mesh.globalCoords(2,vID,k);
-	    
-	    //u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
-	    u(vID, iS, k) = std::exp(-100*std::pow(y-.5, 2.0));
-	    
-	  }
+	  //u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
+	  u(vID, 0, k) = std::exp(-100*std::pow(x-.5, 2.0));
+	  u(vID, 1, k) = std::exp(-100*std::pow(y-.5, 2.0));
+	  u(vID, 2, k) = std::exp(-100*std::pow(z-.5, 2.0));
+	  
 	}
       }
     }
@@ -208,29 +208,46 @@ void Solver::trueSolution(darray& uTrue, double t) const {
   double eps = 1e-2;
   
   for (int k = 0; k < mesh.nElements; ++k) {
-    for (int iS = 0; iS < nStates; ++iS) {
-      for (int iz = 0; iz < order+1; ++iz) {
-	for (int iy = 0; iy < order+1; ++iy) {
-	  for (int ix = 0; ix < order+1; ++ix) {
-	    int vID = ix + iy*(order+1) + iz*(order+1)*(order+1);
-	    
-	    double x = mesh.globalCoords(0,vID,k);
-	    double y = mesh.globalCoords(1,vID,k);
-	    double z = mesh.globalCoords(2,vID,k);
-	    // True solution = initial solution u0(x-a*t)
-	    /*
+    for (int iz = 0; iz < order+1; ++iz) {
+      for (int iy = 0; iy < order+1; ++iy) {
+	for (int ix = 0; ix < order+1; ++ix) {
+	  int vID = ix + iy*(order+1) + iz*(order+1)*(order+1);
+	  
+	  double x = mesh.globalCoords(0,vID,k);
+	  double y = mesh.globalCoords(1,vID,k);
+	  double z = mesh.globalCoords(2,vID,k);
+	  // True solution = initial solution u0(x-a*t)
+	  /*
 	    uTrue(vID, iS, k) = std::sin(2*fmod(x-this->a[0]*t+5.0,1.0)*M_PI)
-	      *std::sin(2*fmod(y-this->a[1]*t+5.0,1.0)*M_PI)
-	      *std::sin(2*fmod(z-this->a[2]*t+5.0,1.0)*M_PI);
+	    *std::sin(2*fmod(y-this->a[1]*t+5.0,1.0)*M_PI)
+	    *std::sin(2*fmod(z-this->a[2]*t+5.0,1.0)*M_PI);
 	    */
-	    uTrue(vID, iS, k) = 0.0;
-	    for (int i = -N; i <= N; ++i) {
-	      uTrue(vID, iS, k) += std::exp(-100/(1+400*eps*t)*
-					    (std::pow(std::fmod(y-t,1.0)-.5+i,2.0)))
-		/std::sqrt(1+400*eps*t);
-	    }
-	    
+	  
+	  // True solution = conv-diff
+	  uTrue(vID, 0, k) = 0.0;
+	  for (int i = -N; i <= N; ++i) {
+	    uTrue(vID, 0, k) += std::exp(-100/(1+400*eps*t)*
+					  (std::pow(std::fmod(x-t,1.0)-.5+i,2.0)))
+	      /std::sqrt(1+400*eps*t);
 	  }
+	  uTrue(vID, 1, k) = 0.0;
+	  for (int i = -N; i <= N; ++i) {
+	    uTrue(vID, 1, k) += std::exp(-100/(1+400*eps*t)*
+					  (std::pow(std::fmod(y-t,1.0)-.5+i,2.0)))
+	      /std::sqrt(1+400*eps*t);
+	  }
+	  uTrue(vID, 2, k) = 0.0;
+	  for (int i = -N; i <= N; ++i) {
+	    uTrue(vID, 2, k) += std::exp(-100/(1+400*eps*t)*
+					  (std::pow(std::fmod(z-t,1.0)-.5+i,2.0)))
+	      /std::sqrt(1+400*eps*t);
+	  }
+	  
+	  /* // True solution = initial solution u0(x-a*t)
+	  uTrue(vID, 0, k) = std::exp(-100*std::pow(std::fmod(x-t,1.0)-.5, 2.0));
+	  uTrue(vID, 1, k) = std::exp(-100*std::pow(std::fmod(y-t,1.0)-.5, 2.0));
+	  uTrue(vID, 2, k) = std::exp(-100*std::pow(std::fmod(z-t,1.0)-.5, 2.0));
+	  */
 	}
       }
     }
@@ -619,7 +636,7 @@ void Solver::convectDGVolume(const darray& uInterp3D, darray& residual) const {
   int nQ3D = Interp3D.size(0);
   
   // Contains all flux information
-  darray fc{nStates, nQ3D, mesh.nElements, Mesh::DIM};
+  darray fc{nQ3D, nStates, mesh.nElements, Mesh::DIM};
   
   // Temporary arrays for computing fluxes
   darray fluxes{nStates, Mesh::DIM};
@@ -638,7 +655,7 @@ void Solver::convectDGVolume(const darray& uInterp3D, darray& residual) const {
       // Copy data into fc
       for (int l = 0; l < Mesh::DIM; ++l) {
 	for (int iS = 0; iS < nStates; ++iS) {
-	  fc(iS,iQ,k,l) = fluxes(iS, l);
+	  fc(iQ,iS,k,l) = fluxes(iS, l);
 	}
       }
       
@@ -735,7 +752,7 @@ void Solver::viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, 
   int nQ3D = Interp3D.size(0);
   
   // Contains all flux information
-  darray fv{nStates, nQ3D, mesh.nElements, Mesh::DIM};
+  darray fv{nQ3D, nStates, mesh.nElements, Mesh::DIM};
   
   // Temporary arrays for computing fluxes
   darray fluxes{nStates, Mesh::DIM};
@@ -761,7 +778,7 @@ void Solver::viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, 
       // Copy negative data into fv
       for (int l = 0; l < Mesh::DIM; ++l) {
 	for (int iS = 0; iS < nStates; ++iS) {
-	  fv(iS,iQ,k,l) = -fluxes(iS, l);
+	  fv(iQ,iS,k,l) = -fluxes(iS, l);
 	}
       }
       
@@ -858,9 +875,10 @@ inline void Solver::fluxC(const darray& uK, darray& fluxes) const {
     // TODO: try 2 states
   }
   */
-  fluxes(0) = 0.0;
-  fluxes(1) = uK(0);
-  fluxes(2) = 0.0;
+  fluxes.fill(0.0);
+  fluxes(0,0) = uK(0);
+  fluxes(1,1) = uK(1);
+  fluxes(2,2) = uK(2);
 }
 
 /** Evaluates the actual viscosity flux function for the PDE */
@@ -877,7 +895,9 @@ inline void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) c
   */
   
   fluxes.fill(0.0);
-  fluxes(0,1) = eps*DuK(0,1);
+  fluxes(0,0) = eps*DuK(0,0);
+  fluxes(1,1) = eps*DuK(1,1);
+  fluxes(2,2) = eps*DuK(2,2);
   
 }
 
