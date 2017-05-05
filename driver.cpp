@@ -22,10 +22,6 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing mesh..." << std::endl;
   }
   
-  //Point botLeft{-1,-1,-1};
-  //Point topRight{1,1,1};
-  //Mesh mesh{1,1,1, botLeft, topRight};
-  
   //Mesh mesh{mpi};
   Mesh mesh{10, 10, 10, Point{0.0,0.0,0.0}, Point{1.0,1.0,1.0}, mpi};
   

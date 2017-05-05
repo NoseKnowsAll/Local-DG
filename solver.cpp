@@ -190,8 +190,8 @@ void Solver::initialCondition() {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    
-	    u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
-	    //u(vID, iS, k) = std::exp(-100*std::pow(y-.5, 2.0));
+	    //u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
+	    u(vID, iS, k) = std::exp(-100*std::pow(y-.5, 2.0));
 	    
 	  }
 	}
@@ -218,9 +218,11 @@ void Solver::trueSolution(darray& uTrue, double t) const {
 	    double y = mesh.globalCoords(1,vID,k);
 	    double z = mesh.globalCoords(2,vID,k);
 	    // True solution = initial solution u0(x-a*t)
-	    /*uTrue(vID, iS, k) = std::sin(2*fmod(x-this->a[0]*t+5.0,1.0)*M_PI)
+	    /*
+	    uTrue(vID, iS, k) = std::sin(2*fmod(x-this->a[0]*t+5.0,1.0)*M_PI)
 	      *std::sin(2*fmod(y-this->a[1]*t+5.0,1.0)*M_PI)
-	      *std::sin(2*fmod(z-this->a[2]*t+5.0,1.0)*M_PI);*/
+	      *std::sin(2*fmod(z-this->a[2]*t+5.0,1.0)*M_PI);
+	    */
 	    uTrue(vID, iS, k) = 0.0;
 	    for (int i = -N; i <= N; ++i) {
 	      uTrue(vID, iS, k) += std::exp(-100/(1+400*eps*t)*
@@ -308,7 +310,7 @@ void Solver::dgTimeStep() {
       if (!success)
 	exit(-1);
       
-      /* TODO: debugging for convection problem
+      // TODO: debugging for convection problem
       trueSolution(uTrue, iStep*dt);
       double norm = 0.0;
       for (int iK = 0; iK < mesh.nElements; ++iK) {
@@ -322,8 +324,7 @@ void Solver::dgTimeStep() {
 	}
       }
       std::cout << "infinity norm at time " << iStep*dt << " = " << norm << std::endl;
-      // END TODO
-      */
+      // END TODO */
       
       if (iStep/dtSnaps == 10) {
 	if (mpi.rank == mpi.ROOT) {
@@ -405,7 +406,6 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   // Interpolate uCurr once
   interpolate(uCurr, uInterp2D, uInterp3D, toSend, toRecv, rk4Reqs, 1);
   
-  /*
   // First solve for the Dus in each dimension according to:
   // Du_l = Mel\(-S_l*u + fluxesL(u))
   Dus.fill(0.0);
@@ -425,7 +425,6 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   
   // Interpolate Dus once
   interpolate(Dus, DuInterp2D, DuInterp3D, toSend, toRecv, rk4Reqs, Mesh::DIM);
-  */
   
   // Now compute ks(:,istage) from uCurr and these Dus according to:
   // ks(:,istage) = Mel\( K*fc(u) + K*fv(u,Dus) - Fc(u) - Fv(u,Dus) )
@@ -434,7 +433,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   residual.fill(0.0);
   
   convectDGFlux(uInterp2D, residual);
-  //viscousDGFlux(uInterp2D, DuInterp2D, residual);
+  viscousDGFlux(uInterp2D, DuInterp2D, residual);
   
   // ks(:,istage) = -Fc(u)-Fv(u,Dus)
   cblas_dscal(dofs*nStates*mesh.nElements, -1.0, residual.data(), 1);
@@ -443,7 +442,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D,
   convectDGVolume(uInterp3D, residual);
   
   // ks(:,istage) += Kv*fv(u)
-  //viscousDGVolume(uInterp3D, DuInterp3D, residual);
+  viscousDGVolume(uInterp3D, DuInterp3D, residual);
   
   // ks(:,istage) = Mel\ks(:,istage)
   int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, nStates*mesh.nElements,
@@ -623,7 +622,7 @@ void Solver::convectDGVolume(const darray& uInterp3D, darray& residual) const {
   darray fc{nStates, nQ3D, mesh.nElements, Mesh::DIM};
   
   // Temporary arrays for computing fluxes
-  darray fluxes{nStates,Mesh::DIM};
+  darray fluxes{nStates, Mesh::DIM};
   darray uK{nStates};
   
   // Loop over all elements, points
@@ -734,6 +733,7 @@ void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, da
 void Solver::viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, darray& residual) const {
   
   int nQ3D = Interp3D.size(0);
+  
   // Contains all flux information
   darray fv{nStates, nQ3D, mesh.nElements, Mesh::DIM};
   
@@ -758,10 +758,10 @@ void Solver::viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, 
       
       // Compute fluxes
       fluxV(uK, DuK, fluxes);
-      // Copy data into fv
+      // Copy negative data into fv
       for (int l = 0; l < Mesh::DIM; ++l) {
 	for (int iS = 0; iS < nStates; ++iS) {
-	  fv(iS,iQ,k,l) = fluxes(iS, l);
+	  fv(iS,iQ,k,l) = -fluxes(iS, l);
 	}
       }
       
@@ -834,10 +834,10 @@ void Solver::numericalFluxV(const darray& uN, const darray& uK,
   kWins = (sum > 0);
   
   if (kWins) {
-    fluxV(uK, DuN, Flux);
+    fluxV(uK, DuK, Flux);
   }
   else {
-    fluxV(uN, DuK, Flux);
+    fluxV(uN, DuN, Flux);
   }
   
   fluxes.fill(0.0);
@@ -851,11 +851,16 @@ void Solver::numericalFluxV(const darray& uN, const darray& uK,
 
 /** Evaluates the actual convection flux function for the PDE */
 inline void Solver::fluxC(const darray& uK, darray& fluxes) const {
+  /*
   for (int l = 0; l < Mesh::DIM; ++l) {
-    fluxes(0, l) = a[l]*uK(l);
+    fluxes(0, l) = a[l]*uK(0);
     
     // TODO: try 2 states
   }
+  */
+  fluxes(0) = 0.0;
+  fluxes(1) = uK(0);
+  fluxes(2) = 0.0;
 }
 
 /** Evaluates the actual viscosity flux function for the PDE */
@@ -863,14 +868,16 @@ inline void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) c
   // TODO: fv(u,Du) = a*u-eps*sum(DuK) right now. This depends on PDE!
   double eps = 1e-2;
   
-  fluxes.fill(0.0);
   /*
   for (int l = 0; l < Mesh::DIM; ++l) {
-    fluxes(0, l) = eps*a[l]*DuK(l);
+    fluxes(0, l) = eps*a[l]*DuK(0,l);
     
     // TODO: try two states
   }
   */
+  
+  fluxes.fill(0.0);
+  fluxes(0,1) = eps*DuK(0,1);
   
 }
 
