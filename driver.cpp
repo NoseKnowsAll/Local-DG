@@ -23,7 +23,11 @@ int main(int argc, char *argv[]) {
   }
   
   //Mesh mesh{mpi};
-  Mesh mesh{10, 10, 10, Point{0.0,0.0,0.0}, Point{1.0,1.0,1.0}, mpi};
+  double L = 1;
+  double size = M_PI*L;
+  Point botLeft{-size, -size, -size};
+  Point topRight{size, size, size};
+  Mesh mesh{32, 32, 32, botLeft, topRight, mpi};
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing solver..." << std::endl;
@@ -31,7 +35,7 @@ int main(int argc, char *argv[]) {
   
   int p = 2;
   double tf = 1.0;
-  int dtSnaps = 30;
+  int dtSnaps = 800;
   Solver dgSolver{p, dtSnaps, tf, mesh};
   
   dgSolver.dgTimeStep();

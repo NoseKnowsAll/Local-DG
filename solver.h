@@ -37,9 +37,30 @@ private:
   darray Interp3D;
   
   darray u;
-  darray u0;
   
-  const double a[Mesh::DIM];
+  /* For convection-diffusion 
+  typedef struct {
+    const double a[Mesh::DIM] = {1,2,3};
+    const double eps = 1e-2;
+  } physics;
+  */
+  
+  typedef struct {
+    double pars[2]; // Reynolds number, Prandtl number
+    double gamma;   // adiabatic gas constant = ratio of specific heats = 1.4 in ideal gas
+    double M0;      // background Mach number
+    double rho0;    // background density
+    double V0;      // background velocity
+    //double mu;      // dynamic shear viscosity
+    //double kappa;   // heat conductivity
+    double c0;      // background speed of sound
+    double p0;      // background pressure
+    double T0;      // background temperature
+    double tc;      // characteristic convective time
+    double R;       // ideal gas constant
+  } physics;
+  
+  physics p;
   
   void precomputeLocalMatrices();
   void precomputeInterpMatrices();
