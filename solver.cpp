@@ -44,10 +44,11 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   p.T0 = p.p0/(p.R*p.rho0);
   double maxVel = p.V0;
   
-  // Change tf = 10*tc in order to visualize most turbulent structures
-  tf = 10*p.tc;
   // Choose dt based on CFL condition - DEPENDS ON PDE
   dt = 0.01*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/(maxVel*(2*order+1));
+  // Change tf = 10*tc in order to visualize most turbulent structures
+  //tf = 10*p.tc;
+  tf = 2000*dt; // TODO: change back
   // Ensure we will exactly end at tf
   timesteps = std::ceil(tf/dt);
   dt = tf/timesteps;
@@ -59,7 +60,6 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
   
-  // TODO: DEPENDS ON PDE
   nStates = 5;
   u.realloc(dofs, nStates, mesh.nElements);
   initialCondition(); // sets u
@@ -193,7 +193,6 @@ void Solver::precomputeLocalMatrices() {
   
 }
 
-// TODO: Initialize u0 based off of a reasonable function
 void Solver::initialCondition() {
   
   double L = 1.0; // TODO: get as input?
@@ -409,12 +408,19 @@ void Solver::dgTimeStep() {
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
-	    if (istage == nStages-1 && iK == 0 && iS == 4) {
+	    /*
+	    if (istage == nStages-1 && iK == 0 && iS == 4 && mpi.rank == mpi.ROOT) {
 	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
 	    }
+	    */
 	  }
 	}
       }
+    }
+    
+    // TODO: quitting after 2000 time steps
+    if (iStep == 2000) {
+      break;
     }
     
   }

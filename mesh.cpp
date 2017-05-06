@@ -101,7 +101,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   
   for (int l = 0; l < MPIUtil::DIM; ++l) {
     if (localNs[l] < 3) {
-      std::cerr << "ERROR: on rank " << mpi.rank << ": dimension in " << l << " MPI dimension is not enough to have interior elements!" << std::endl;
+      std::cerr << "ERROR: on rank " << mpi.rank << ": " << l << " MPI dimension is not enough to have interior elements!" << std::endl;
       exit(-1);
     }
   }

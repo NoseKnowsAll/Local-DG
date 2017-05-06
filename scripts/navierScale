@@ -1,0 +1,27 @@
+#!/bin/bash -l
+#SBATCH -p development
+#SBATCH -t 02:00:00
+#SBATCH -N 4
+#SBATCH -n 64
+#SBATCH --ntasks-per-node=16
+#SBATCH -o output/navierScale.%j.out
+#SBATCH -e output/navierScale.%j.err
+
+EXEPATH=/home1/04685/tg839843/CS267/final/Local-DG/
+EXE=${EXEPATH}driver
+NPROC=1
+
+OUTPUT=${EXEPATH}output/navierScale.out
+
+echo "Starting tests" > ${OUTPUT}
+
+NPS="8 16 32 48 64"
+for NP in ${NPS}
+do
+    echo "Running on ${NP} cores"
+    
+#    NP=$((8*${NSOCKETS}))
+    
+    echo "ibrun -n ${NP} -o 0 ${EXE} >> ${OUTPUT}"
+    ibrun -n ${NP} -o 0 ${EXE} >> ${OUTPUT}
+done

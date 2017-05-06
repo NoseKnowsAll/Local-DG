@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
   
   int p = 2;
   double tf = 1.0;
-  int dtSnaps = 800;
+  int dtSnaps = 20000; // TODO
   Solver dgSolver{p, dtSnaps, tf, mesh};
   
   dgSolver.dgTimeStep();

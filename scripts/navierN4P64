@@ -1,0 +1,19 @@
+#!/bin/bash -l
+#SBATCH -p development
+#SBATCH -t 02:00:00
+#SBATCH -N 4
+#SBATCH -n 64
+#SBATCH --ntasks-per-node=16
+#SBATCH -o output/navier.%j.out
+#SBATCH -e output/navier.%j.err
+
+EXEPATH=/home1/04685/tg839843/CS267/final/Local-DG/
+EXE=${EXEPATH}driver
+NP=$((16*${SLURM_NNODES}))
+NPROC=1
+
+OUTPUT=${EXEPATH}output/navier.out
+
+echo "running srun -n ${NP} -N ${SLURM_NNODES} ${EXE} > ${OUTPUT}"
+ibrun -n ${NP} -o 0 ${EXE} > ${OUTPUT}
+tail ${OUTPUT}
