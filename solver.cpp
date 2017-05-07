@@ -26,7 +26,6 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
 {
   
   // Initialize time stepping information
-  // TODO: choose dt based on CFL condition - DEPENDS ON PDE
   //double maxVel = *std::max_element(a, a+Mesh::DIM);
   double maxVel = std::accumulate(a, a+Mesh::DIM, 0.0);
   dt = 0.1*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/(maxVel*(2*order+1));
@@ -41,7 +40,6 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
   
-  // TODO: DEPENDS ON PDE
   nStates = 3;
   u.realloc(dofs, nStates, mesh.nElements);
   initialCondition(); // sets u
@@ -175,7 +173,6 @@ void Solver::precomputeLocalMatrices() {
   
 }
 
-// TODO: Initialize u0 based off of a reasonable function
 void Solver::initialCondition() {
   
   // Sin function allowing for periodic initial condition
@@ -188,8 +185,7 @@ void Solver::initialCondition() {
 	  double x = mesh.globalCoords(0,vID,k);
 	  double y = mesh.globalCoords(1,vID,k);
 	  double z = mesh.globalCoords(2,vID,k);
-	    
-	  //u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
+	  
 	  u(vID, 0, k) = std::exp(-100*std::pow(x-.5, 2.0));
 	  u(vID, 1, k) = std::exp(-100*std::pow(y-.5, 2.0));
 	  u(vID, 2, k) = std::exp(-100*std::pow(z-.5, 2.0));
@@ -326,24 +322,9 @@ void Solver::dgTimeStep() {
       success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
-      */
-      // TODO: debugging for convection problem
-     /* trueSolution(uTrue, iStep*dt);
-      double norm = 0.0;
-      for (int iK = 0; iK < mesh.nElements; ++iK) {
-	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iN = 0; iN < dofs; ++iN) {
-	    uTrue(iN, iS, iK) -= u(iN, iS, iK);
-	    if (std::abs(uTrue(iN, iS, iK)) > norm) {
-	      norm = std::abs(uTrue(iN, iS, iK));
-	    }
-	  }
-	}
-      }
-      std::cout << "infinity norm at time " << iStep*dt << " = " << norm << std::endl;
-      // END TODO */
+	
       
-     /* if (iStep/dtSnaps == 10) {
+      if (iStep/dtSnaps == 10) {
 	if (mpi.rank == mpi.ROOT) {
 	  std::cout << "exiting for debugging purposes...\n";
 	}
@@ -381,6 +362,8 @@ void Solver::dgTimeStep() {
   std::chrono::duration<double> elapsed = endTime-startTime;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Finished time stepping. Time elapsed = " << elapsed.count() << std::endl;
+    
+    // Compare against true convection-diffusion solution
     trueSolution(uTrue, tf);
     double norm = 0.0;
     for (int iK = 0; iK < mesh.nElements; ++iK) {
@@ -395,7 +378,6 @@ void Solver::dgTimeStep() {
     }
     std::cout << std::scientific;
     std::cout << "infinity norm at time " << tf << " = " << norm << std::endl;
-     // END TODO */
   }
   
 }
@@ -692,7 +674,7 @@ void Solver::convectDGVolume(const darray& uInterp3D, darray& residual) const {
 /**
    Viscous DG Flux: Computes Fv(u) for use in the Local DG formulation of the 
    2nd-order diffusion term.
-   Uses upwinding for the numerical flux. TODO: Use Per's Roe solver.
+   Uses upwinding for the numerical flux. 
    Updates residual variable with added flux
 */
 void Solver::viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, darray& residual) const {
@@ -823,7 +805,6 @@ inline double Solver::numericalFluxL(double uK, double uN, double normalK) const
 /**
    Evaluates the convection numerical flux function for this PDE for all states, 
    dotted with the normal, storing output in fluxes.
-   TODO: replace with roe3d
 */
 void Solver::numericalFluxC(const darray& uN, const darray& uK, 
 			    const darray& normalK, darray& fluxes) const {
@@ -831,7 +812,6 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   darray FK{nStates,Mesh::DIM};
   darray FN{nStates,Mesh::DIM};
   
-  // TODO: fc(u) = a*u right now. This depends on PDE!
   fluxC(uK, FK);
   fluxC(uN, FN);
   
@@ -853,8 +833,7 @@ void Solver::numericalFluxV(const darray& uN, const darray& uK,
 			    const darray& DuN, const darray& DuK, 
 			    const darray& normalK, darray& fluxes) const {
   
-  // TODO: figure out exactly which uK, uN, DuK, DuN to call fluxV with
-  // Right now, we're using some weird switch
+  // Use switch to determine which Du to choose
   darray Flux{nStates, Mesh::DIM};
   
   bool kWins;
@@ -869,7 +848,7 @@ void Solver::numericalFluxV(const darray& uN, const darray& uK,
     fluxV(uK, DuK, Flux);
   }
   else {
-    fluxV(uN, DuN, Flux);
+    fluxV(uK, DuN, Flux);
   }
   
   fluxes.fill(0.0);
@@ -883,31 +862,17 @@ void Solver::numericalFluxV(const darray& uN, const darray& uK,
 
 /** Evaluates the actual convection flux function for the PDE */
 inline void Solver::fluxC(const darray& uK, darray& fluxes) const {
-  /*
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    fluxes(0, l) = a[l]*uK(0);
-    
-    // TODO: try 2 states
-  }
-  */
+  
   fluxes.fill(0.0);
   fluxes(0,0) = uK(0);
   fluxes(1,1) = uK(1);
   fluxes(2,2) = uK(2);
+  
 }
 
 /** Evaluates the actual viscosity flux function for the PDE */
 inline void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) const {
-  // TODO: fv(u,Du) = a*u-eps*sum(DuK) right now. This depends on PDE!
   double eps = 1e-2;
-  
-  /*
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    fluxes(0, l) = eps*a[l]*DuK(0,l);
-    
-    // TODO: try two states
-  }
-  */
   
   fluxes.fill(0.0);
   fluxes(0,0) = eps*DuK(0,0);

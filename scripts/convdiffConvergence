@@ -1,0 +1,18 @@
+#!/bin/bash -l
+#SBATCH -p development
+#SBATCH -t 02:00:00
+#SBATCH -N 4
+#SBATCH -n 64
+#SBATCH --ntasks-per-node=16
+#SBATCH -o output/convdiffConvergence.%j.out
+#SBATCH -e output/convdiffConvergence.%j.err
+
+EXEPATH=/home1/04685/tg839843/CS267/final/ConvDiff/Local-DG/
+EXE=${EXEPATH}driver
+NP=$((16*${SLURM_NNODES}))
+NPROC=1
+
+OUTPUT=${EXEPATH}output/convdiffConvergence.out
+
+ibrun -n ${NP} -o 0 ${EXE} > ${OUTPUT}
+tail ${OUTPUT}
