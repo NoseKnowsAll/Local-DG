@@ -316,19 +316,19 @@ void Solver::dgTimeStep() {
       if (mpi.rank == mpi.ROOT) {
 	auto endTime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = endTime-startTime;
-	std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
+	//std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
       
-      bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u", nStates);
+     /* bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u", nStates);
       if (!success)
 	exit(-1);
       success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
-      
+      */
       // TODO: debugging for convection problem
-      trueSolution(uTrue, iStep*dt);
+     /* trueSolution(uTrue, iStep*dt);
       double norm = 0.0;
       for (int iK = 0; iK < mesh.nElements; ++iK) {
 	for (int iS = 0; iS < nStates; ++iS) {
@@ -343,13 +343,13 @@ void Solver::dgTimeStep() {
       std::cout << "infinity norm at time " << iStep*dt << " = " << norm << std::endl;
       // END TODO */
       
-      if (iStep/dtSnaps == 10) {
+     /* if (iStep/dtSnaps == 10) {
 	if (mpi.rank == mpi.ROOT) {
 	  std::cout << "exiting for debugging purposes...\n";
 	}
 	exit(0);
       }
-      
+      */
     }
     
     // Use RK4 to compute k values at each stage
@@ -381,6 +381,21 @@ void Solver::dgTimeStep() {
   std::chrono::duration<double> elapsed = endTime-startTime;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Finished time stepping. Time elapsed = " << elapsed.count() << std::endl;
+    trueSolution(uTrue, tf);
+    double norm = 0.0;
+    for (int iK = 0; iK < mesh.nElements; ++iK) {
+      for (int iS = 0; iS < nStates; ++iS) {
+        for (int iN = 0; iN < dofs; ++iN) {
+          uTrue(iN, iS, iK) -= u(iN, iS, iK);
+	  if (std::abs(uTrue(iN, iS, iK)) > norm) {
+	    norm = std::abs(uTrue(iN, iS, iK));
+	  }
+	}
+      }
+    }
+    std::cout << std::scientific;
+    std::cout << "infinity norm at time " << tf << " = " << norm << std::endl;
+     // END TODO */
   }
   
 }
