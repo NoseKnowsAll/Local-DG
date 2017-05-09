@@ -1,10 +1,10 @@
 #include "solver.h"
 
 /** Default constructor */
-Solver::Solver() : Solver{2, 10, 1.0, Mesh{}} { }
+Solver::Solver() : Solver{2, 10, 1.0, 1.0, Mesh{}} { }
 
 /** Main constructor */
-Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
+Solver::Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh) :
   mesh{_mesh},
   mpi{_mesh.mpi},
   tf{_tf},
@@ -25,8 +25,6 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   p{}
 {
   
-  double L = 1; // TODO: get this as an input
-  
   // Initialize time stepping and physics information
   //double maxVel = std::accumulate(p.a, p.a+Mesh::DIM, 0.0);
   p.pars[0]  = 1600.0; // Reynolds
@@ -36,11 +34,12 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   p.R        = 8.314;  // ideal gas constant
   p.rho0     = 1.0;                    // Necessary
   p.V0       = 1.0;                    // Necessary
+  p.L        = _L;
   
-  //p.V0 = p.params[0]*p.mu/(p.rho0*L);
+  //p.V0 = p.params[0]*p.mu/(p.rho0*p.L);
   p.c0 = p.V0/p.M0;
   p.p0 = p.rho0*p.c0*p.c0/p.gamma;      // Necessary
-  p.tc = L/p.V0;                        // Necessary
+  p.tc = p.L/p.V0;                      // Necessary
   p.T0 = p.p0/(p.R*p.rho0);
   double maxVel = p.V0;
   
@@ -48,7 +47,7 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh) :
   dt = 0.01*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/(maxVel*(2*order+1));
   // Change tf = 10*tc in order to visualize most turbulent structures
   //tf = 10*p.tc;
-  tf = 2000*dt; // TODO: change back
+  tf = 20*p.tc; // TODO: change back
   // Ensure we will exactly end at tf
   timesteps = std::ceil(tf/dt);
   dt = tf/timesteps;
@@ -195,8 +194,6 @@ void Solver::precomputeLocalMatrices() {
 
 void Solver::initialCondition() {
   
-  double L = 1.0; // TODO: get as input?
-  
   // Sin function allowing for periodic initial condition
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int iz = 0; iz < order+1; ++iz) {
@@ -217,13 +214,15 @@ void Solver::initialCondition() {
 	  
 	  // p
 	  double pressure = p.p0 + (p.rho0*p.V0*p.V0/16.0)
-	    *(std::cos(2*x/L)+std::cos(2*y/L))*(std::cos(2*z/L)+2);
+	    *(std::cos(2*x/p.L)+std::cos(2*y/p.L))*(std::cos(2*z/p.L)+2);
 	  // rho
 	  u(vID, 0, k) = pressure/(p.R*p.T0);
 	  // rho*v_0
-	  u(vID, 1, k) = p.rho0*p.V0*std::sin(x/L)*std::cos(y/L)*std::cos(z/L);
+	  u(vID, 1, k) = p.rho0*p.V0*std::sin(x/p.L)
+	    *std::cos(y/p.L)*std::cos(z/p.L);
 	  // rho*v_1
-	  u(vID, 2, k) = -p.rho0*p.V0*std::cos(x/L)*std::sin(y/L)*std::cos(z/L);
+	  u(vID, 2, k) = -p.rho0*p.V0*std::cos(x/p.L)
+	    *std::sin(y/p.L)*std::cos(z/p.L);
 	  // rho*v_2
 	  u(vID, 3, k) = 0*p.rho0;
 	  // rho*E
@@ -327,6 +326,9 @@ void Solver::dgTimeStep() {
   darray DuInterp3D{Interp3D.size(0), nStates, mesh.nElements, Mesh::DIM};
   darray uTrue{dofs, nStates, mesh.nElements, 1};
   
+  darray kes{timesteps};
+  darray keDissipation{timesteps-2};
+  
   int nBElems = max(mesh.mpiNBElems);
   darray toSend{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   darray toRecv{nQ2D, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
@@ -344,6 +346,20 @@ void Solver::dgTimeStep() {
   
   // Loop over time steps
   for (int iStep = 0; iStep < timesteps; ++iStep) {
+    
+    auto endTime = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = endTime-startTime;
+    if (elapsed.count() > 19.5*60*60) {
+      if (mpi.rank == mpi.ROOT)
+	std::cout << "quitting voluntarily due to time limit" << std::endl;
+      
+      bool success = initXYZVFile("output/xyznavier.tmp", 0, "u", nStates);
+      if (!success)
+	exit(-1);
+      success = exportToXYZVFile("output/xyznavier.tmp", 0, mesh.globalCoords, u);
+      break;
+    }
+    
     if (mpi.rank == mpi.ROOT) {
       std::cout << "time = " << iStep*dt << std::endl;
     }
@@ -356,13 +372,14 @@ void Solver::dgTimeStep() {
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
       
+      /* // TODO: outputting snapshot files
       bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u", nStates);
       if (!success)
 	exit(-1);
       success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
-      
+      */
       /* // TODO: debugging for convection problem
       trueSolution(uTrue, iStep*dt);
       double norm = 0.0;
@@ -418,9 +435,10 @@ void Solver::dgTimeStep() {
       }
     }
     
-    // TODO: quitting after 2000 time steps
-    if (iStep == 2000) {
-      break;
+    
+    kes(iStep) = computeKE(uInterp3D);
+    if (iStep > 1) {
+      keDissipation(iStep-2) = -(kes(iStep) - kes(iStep-2))/(2*dt);
     }
     
   }
@@ -429,6 +447,9 @@ void Solver::dgTimeStep() {
   std::chrono::duration<double> elapsed = endTime-startTime;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Finished time stepping. Time elapsed = " << elapsed.count() << std::endl;
+  
+  std::cout << "Outputting kinetic energy dissipation for Navier-Stokes: " << std::endl;
+  std::cout << keDissipation << std::endl;
   }
   
 }
@@ -984,6 +1005,35 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
 
 //////////////////////////////////////////////////////////////////////////////////
 
+/** Computes the kinetic energy for a given solution to Navier-Stokes */
+double Solver::computeKE(const darray& uInterp3D) const {
+  double globalkEnergy = 0.0;
+  double localkEnergy = 0.0;
+  
+  darray xQ, wQ;
+  int nQ3D = gaussQuad3D(2*order, xQ, wQ);
+  
+  darray alpha{Mesh::DIM};
+  alpha(0) = mesh.minDX/2.0;
+  alpha(1) = mesh.minDY/2.0;
+  alpha(2) = mesh.minDZ/2.0;
+  double Jacobian = alpha(0)*alpha(1)*alpha(2);
+  
+  darray kes{mesh.nElements};
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iFQ = 0; iFQ < nQ3D; ++iFQ) {
+      kes(iK) += Jacobian*wQ(iFQ)*(u(iFQ,1,iK)*u(iFQ,1,iK) + u(iFQ,2,iK)*u(iFQ,2,iK) + u(iFQ,3,iK)*u(iFQ,3,iK))/(2*u(iFQ,0,iK));
+    }
+    
+    localkEnergy += kes(iK);
+  }
+  
+  MPI_Allreduce(&localkEnergy, &globalkEnergy, 1, MPI_DOUBLE, MPI_SUM, mpi.cartComm);
+  
+  globalkEnergy = globalkEnergy/(p.rho0*std::pow(2*M_PI*p.L, 3.0));
+  
+  return globalkEnergy;
+}
 
 
 

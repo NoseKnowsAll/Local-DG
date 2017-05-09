@@ -1,0 +1,20 @@
+#!/bin/bash -l
+#SBATCH -p normal
+#SBATCH -t 20:00:00
+#SBATCH -N 16
+#SBATCH -n 256
+#SBATCH --ntasks-per-node=16
+#SBATCH -o output/navierDissipation.%j.out
+#SBATCH -e output/navierDissipation.%j.err
+
+EXEPATH=/home1/04685/tg839843/CS267/final/Local-DG/
+EXE=${EXEPATH}driver
+
+OUTPUT=${EXEPATH}output/navierDissipation.out
+
+echo "Starting tests" > ${OUTPUT}
+
+NP=256
+echo "ibrun -n ${NP} -o 0 ${EXE} >> ${OUTPUT}"
+ibrun -n ${NP} -o 0 ${EXE} >> ${OUTPUT}
+

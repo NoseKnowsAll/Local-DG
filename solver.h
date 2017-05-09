@@ -51,6 +51,7 @@ private:
     double M0;      // background Mach number
     double rho0;    // background density
     double V0;      // background velocity
+    double L;       // size of domain = pi*L
     //double mu;      // dynamic shear viscosity
     //double kappa;   // heat conductivity
     double c0;      // background speed of sound
@@ -98,9 +99,11 @@ private:
   void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
   void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;
   
+  double computeKE(const darray& uInterp3D) const;
+  
 public:
   Solver();
-  Solver(int _p, int _dtSnaps, double _tf, const Mesh& _mesh);
+  Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh);
   
   void dgTimeStep();
   
