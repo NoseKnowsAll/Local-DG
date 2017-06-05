@@ -3,8 +3,13 @@
 
 #include <cmath>
 #include <iostream>
+#ifdef __INTEL_COMPILER
 #include <mkl_lapacke.h>
 #include <mkl.h>
+#else
+#include <cblas.h>
+#include <lapacke.h>
+#endif
 
 #include "array.h"
 

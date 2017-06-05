@@ -2,8 +2,13 @@
 #define SOLVER_H__
 
 #include <iostream>
+#ifdef __INTEL_COMPILER
 #include <mkl_lapacke.h>
 #include <mkl.h>
+#else
+#include <cblas.h>
+#include <lapacke.h>
+#endif
 #include <cmath>
 #include <chrono>
 
@@ -20,7 +25,7 @@ private:
   
   double tf;
   double dt;
-  long timesteps;
+  dgSize timesteps;
   int dtSnaps;
   
   int order;

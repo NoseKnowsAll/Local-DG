@@ -47,7 +47,6 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh) :
   dt = 0.01*std::min(std::min(mesh.minDX, mesh.minDY), mesh.minDZ)/(maxVel*(2*order+1));
   // Change tf = 10*tc in order to visualize most turbulent structures
   //tf = 10*p.tc;
-  tf = 20*p.tc; // TODO: change back
   // Ensure we will exactly end at tf
   timesteps = std::ceil(tf/dt);
   dt = tf/timesteps;
@@ -107,7 +106,7 @@ void Solver::precomputeLocalMatrices() {
       }
     }
   }
-  MKL_INT ipiv[dofs];
+  lapack_int ipiv[dofs];
   int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, dofs, 
 			   l3D.data(), dofs, ipiv, coeffsPhi.data(), dofs);
   
@@ -372,14 +371,14 @@ void Solver::dgTimeStep() {
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
       
-      /* // TODO: outputting snapshot files
+      // TODO: outputting snapshot files
       bool success = initXYZVFile("output/xyzu.txt", iStep/dtSnaps, "u", nStates);
       if (!success)
 	exit(-1);
       success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
-      */
+      
       /* // TODO: debugging for convection problem
       trueSolution(uTrue, iStep*dt);
       double norm = 0.0;
@@ -425,11 +424,10 @@ void Solver::dgTimeStep() {
 	for (int iS = 0; iS < nStates; ++iS) {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
-	    /*
+	    
 	    if (istage == nStages-1 && iK == 0 && iS == 4 && mpi.rank == mpi.ROOT) {
 	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
 	    }
-	    */
 	  }
 	}
       }

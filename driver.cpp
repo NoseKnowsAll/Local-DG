@@ -1,5 +1,4 @@
 #include <iostream>
-#include <mkl_lapacke.h>
 #include <cmath>
 #include <mpi.h>
 
@@ -32,7 +31,7 @@ int main(int argc, char *argv[]) {
   double size = M_PI*L;
   Point botLeft{-size, -size, -size};
   Point topRight{size, size, size};
-  int nx = 64;
+  int nx = 10;
   Mesh mesh{nx, nx, nx, botLeft, topRight, mpi};
   
   if (mpi.rank == mpi.ROOT) {
@@ -40,8 +39,8 @@ int main(int argc, char *argv[]) {
   }
   
   int p = 2;
-  double tf = 20.0;
-  int dtSnaps = 2000000; // TODO
+  double tf = 10.0;
+  int dtSnaps = 30;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "p = " << p << std::endl;
     std::cout << "tf = " << tf << std::endl;

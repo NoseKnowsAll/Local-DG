@@ -486,7 +486,7 @@ void interpolationMatrix1D(const darray& xFrom, const darray& xTo, darray& INTER
   for (int ipx = 0; ipx <= order; ++ipx) {
     coeffsPhi(ipx,ipx) = 1.0;
   }
-  MKL_INT ipiv[nFrom];
+  lapack_int ipiv[nFrom];
   int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
 			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
@@ -524,7 +524,7 @@ void interpolationMatrix2D(const darray& xFrom, const darray& xTo, darray& INTER
       coeffsPhi(ipx,ipy,ipx,ipy) = 1.0;
     }
   }
-  MKL_INT ipiv[nFrom];
+  lapack_int ipiv[nFrom];
   int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
 			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
@@ -564,7 +564,7 @@ void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTER
       }
     }
   }
-  MKL_INT ipiv[nFrom];
+  lapack_int ipiv[nFrom];
   int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
 			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
