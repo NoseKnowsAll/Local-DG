@@ -3,7 +3,7 @@ Local Discontinuous Galerkin Solver written in C++ and MPI for use on supercompu
 
 Can be compiled using the MPI Intel compiler (`mpiicpc`) or MPI GCC compiler (`mpic++`).
 
-To install, run `git clone https://github.com/NoseKnowsAll/Navier-Stokes.git`
+To install, run `git clone https://github.com/NoseKnowsAll/Local-DG.git`
 
 ## Running the Program
 
