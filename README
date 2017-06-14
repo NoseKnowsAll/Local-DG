@@ -1,0 +1,27 @@
+# Local-DG
+Local Discontinuous Galerkin Solver written in C++ and MPI for use on supercomputers such as NERSC's Edison or TACC's Stampede to solve problems involving the Navier-Stokes equations in 3D.
+
+Can be compiled using the MPI Intel compiler (`mpiicpc`) or MPI GCC compiler (`mpic++`).
+
+To install, run `git clone https://github.com/NoseKnowsAll/Navier-Stokes.git`
+
+## Running the Program
+
+Main options that can be changed are available in `driver.cpp` and in the constructor `Solver::Solver()` within `solver.cpp`.
+
+First compile the program:
+
+1) On Edison:
+* Ensure `CC` defined as `mpiicpc` in Makefile
+* `source init.sh`
+* `make`
+
+2) On Stampede:
+* Ensure `CC` defined as `mpiicpc` in Makefile
+* `make`
+
+3) On Implicit:
+* Ensure `CC` defined as `mpic++` in Makefile
+* `make`
+
+Once code is successfully compiled, run executable with `./driver`
