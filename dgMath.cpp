@@ -1,5 +1,38 @@
 #include "dgMath.h"
 
+/** Performs the kronecker product C = kron(A,B) of two 2D matrices */
+void kron(const darray& A, const darray& B, darray& C) {
+  
+  int ma = A.size(0);
+  int na = A.size(1);
+  int mb = B.size(0);
+  int nb = B.size(1);
+  
+  kron(A, ma, na, B, mb, nb, C);
+  
+}
+
+/** Performs the kronecker product C = kron(A,B) of two darrays */
+void kron(const darray& A, int ma, int na,
+	  const darray& B, int mb, int nb,
+	  darray& C) {
+
+  C.realloc(mb,ma, nb,na);
+
+  for (int j1 = 0; j1 < na; ++j1) {
+    for (int i1 = 0; i1 < ma; ++i1) {
+      for (int j2 = 0; j2 < nb; ++j2) {
+	for (int i2 = 0; i2 < mb; ++i2) {
+	  C(i2,i1,j2,j1) = A(i1,j1)*B(i2,j2);
+	}
+      }
+    }
+  }
+  
+  // TODO: should I resize here also?
+  //C.resize(mb*ma,nb*na);
+}
+
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
 int chebyshev(int p, darray& cheby) {
   

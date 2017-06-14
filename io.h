@@ -5,24 +5,15 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+
 #include <mpi.h>
 
+#ifdef HDF5
+#include <H5Cpp.h>
+#include <hdf5_hl.h>
+#endif
+
 #include "array.h"
-
-/**
-   Clears a space separated file for first time use.
-   For use with MATLAB.
-*/
-bool clearSSVFile(const std::string& filename);
-
-/**
-   Outputs array to a txt file using space separated values. 
-   Concatenates to file if it exists.
-   For use with MATLAB.
-*/
-bool exportToSSVFile(const std::string& filename, const darray& arr, int dim0, int dim1);
-
-
 
 /**
    Clears a file and sets up the X-Y-Z-V headers for first time use.

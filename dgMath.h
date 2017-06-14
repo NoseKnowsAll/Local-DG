@@ -13,6 +13,14 @@
 
 #include "array.h"
 
+/** Performs the kronecker product C = kron(A,B) of two 2D matrices */
+void kron(const darray& A, const darray& B, darray& C);
+
+/** Performs the kronecker product C = kron(A,B) of two darrays */
+void kron(const darray& A, int ma, int na,
+	  const darray& B, int mb, int nb,
+	  darray& C);
+
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
 int chebyshev(int p, darray& cheby);
 

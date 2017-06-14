@@ -1,44 +1,5 @@
 #include "io.h"
 
-/**
-   Clears a space separated file for first time use.
-   For use with MATLAB.
-*/
-bool clearSSVFile(const std::string& filename) {
-  std::ofstream outFile(filename, std::ios::out);
-  if (outFile.fail()) {
-    std::cerr << "ERROR: could not open file " << filename << std::endl;
-    return false;
-  }
-  
-  return true;
-}
-
-/**
-   Outputs array to a txt file using space separated values. 
-   Concatenates to file if it exists.
-   For use with MATLAB.
-*/
-bool exportToSSVFile(const std::string& filename, const darray& arr, int dim0, int dim1) {
-  
-  std::ofstream outFile(filename, std::ios::out | std::ios::app);
-  if (outFile.fail()) {
-    std::cerr << "ERROR: could not open file " << filename << std::endl;
-    return false;
-  }
-  
-  for (int i = 0; i < dim1; ++i) {
-    for (int j = 0; j < dim0; ++j) {
-      outFile << arr(j,i) << " ";
-    }
-    outFile << "\n";
-  }
-  outFile << std::endl;
-  
-  return true;
-  
-}
-
 
 /**
    Clears a file and sets up the X-Y-Z-V headers for first time use.
