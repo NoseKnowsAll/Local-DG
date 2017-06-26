@@ -15,6 +15,13 @@
 
 #include "array.h"
 
+
+/**
+   Reads an input .msh file (output from Gmsh) and initializes several key parameters of mesh.h
+*/
+bool readMesh(const std::string& filename, int dim, int n_vertices,
+	      int& nVertices, int& nElements, darray& vertices, iarray& eToV);
+
 /**
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview.

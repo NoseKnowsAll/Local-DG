@@ -8,6 +8,7 @@
 
 #include "array.h"
 #include "MPIUtil.h"
+#include "io.h"
 
 /** Singular point in 3D */
 class Point {
@@ -47,7 +48,7 @@ public:
   /** Number of faces per element */
   const static int N_FACES = 2*DIM;
   /** Number of vertices defining element */
-  const static int N_VERTICES = 8; // 2^DIM
+  const static int N_VERTICES = 1<<DIM; // 2^DIM
   
   
   Mesh();

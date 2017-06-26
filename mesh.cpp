@@ -77,9 +77,12 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   efToN{},
   efToQ{}
 {
+
+  std::cout << "Mesh DIM        = " << DIM << std::endl;
+  std::cout << "Mesh N_VERTICES = " << N_VERTICES << std::endl;
   
   // Initialize my position in MPI topology
-  int globalNs[MPIUtil::DIM] = {nx, ny, nz};
+  int globalNs[MPIUtil::DIM] = {nx, ny};
   int localNs[MPIUtil::DIM];
   int localSs[MPIUtil::DIM];
   int localEs[MPIUtil::DIM];
@@ -196,6 +199,15 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
       }
     }
   }
+
+  // */
+  // TODO: work on reading mesh
+  readMesh("test.msh", DIM, N_VERTICES,
+	   nVertices, nElements, vertices, eToV);
+  //vertices.realloc(DIM, nVertices);
+  //eToV.realloc(N_VERTICES, nElements);
+  //beToE.realloc(nBElements);
+  //ieToE.realloc(nIElements);
   
   // Initialize element-to-face arrays and MPI boundary element map
   eToE.realloc(N_FACES, nElements);

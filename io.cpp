@@ -2,6 +2,74 @@
 
 
 /**
+   Reads an input .msh file (output from Gmsh) and initializes several key parameters of mesh.h
+   Returns true or false based off of success of reading file
+*/
+bool readMesh(const std::string& filename, int dim, int n_vertices,
+	      int& nVertices, int& nElements, darray& vertices, iarray& eToV) {
+
+  std::ifstream mshFile(filename, std::ios::in);
+  if (mshFile.fail()) {
+    std::cerr << "ERROR: could not open mesh " << filename << std::endl;
+    return false;
+  }
+
+  // Skip header until reached "$Nodes" line
+  std::string nextLine;
+  while(std::getline(mshFile, nextLine)) {
+    if (nextLine == "$Nodes")
+      break;
+  }
+
+  // Read in vertices information
+  mshFile >> nVertices;
+  vertices.realloc(dim, nVertices);
+  double dummy;
+  int vID;
+  for (int i = 0; i < nVertices; ++i) {
+    mshFile >> vID >> vertices(0,i) >> vertices(1,i);
+    if (dim == 3)
+      mshFile >> vertices(2,i);
+    else
+      mshFile >> dummy;
+    
+    if (vID != i+1) {
+      std::cerr << "FATAL WARNING: This solver currently only accepts meshes with sequential vertex IDs!" << std::endl;
+      return false;
+    }
+  }
+  
+  // Skip more header information
+  while(std::getline(mshFile, nextLine)) {
+    if (nextLine == "$Elements")
+      break;
+  }
+  
+  // Read in element information
+  mshFile >> nElements;
+  eToV.realloc(n_vertices, nElements);
+  int eID, eType;
+  int ntags, dummytag1, dummytag2;
+  for (int k = 0; k < nElements; ++k) {
+    mshFile >> eID >> eType >> ntags >> dummytag1 >> dummytag2;
+    if (ntags != 2) {
+      std::cerr << "FATAL WARNING: This solver currently only accepts elements with 2 tags!" << std::endl;
+      return false;
+    }
+    if (eID != k+1) {
+      std::cerr << "FATAL WARNING: This solver currently only accepts meshes with sequential element IDs!" << std::endl;
+      return false;
+    }
+
+    // Read in the actual vertices that this element connects
+    for (int i = 0; i < n_vertices; ++i) {
+      mshFile >> eToV(i, k);
+    }
+  }
+  
+}
+
+/**
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview.
 */
