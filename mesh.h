@@ -44,7 +44,7 @@ class Mesh {
 public:
   
   /** Dimension of space we are modeling */ 
-  const static int DIM = 3;
+  const static int DIM = 2;
   /** Number of faces per element */
   const static int N_FACES = 2*DIM;
   /** Number of vertices defining element */

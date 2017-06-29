@@ -36,9 +36,9 @@ void kron(const darray& A, int ma, int na,
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
 int chebyshev1D(int p, darray& cheby) {
   
-  cheby.realloc(p+1);
-  for (int i = 0; i <= p; ++i) {
-    cheby(i) = cos((p-i)*M_PI/p);
+  cheby.realloc(1, p+1);
+  for (int ix = 0; ix <= p; ++ix) {
+    cheby(0, ix) = cos((p-ix)*M_PI/p);
   }
   return p+1;
   
@@ -53,8 +53,8 @@ int chebyshev2D(int p, darray& cheby2D) {
   cheby2D.realloc(2, p+1,p+1);
   for (int iy = 0; iy <= p; ++iy) {
     for (int ix = 0; ix <= p; ++ix) {
-      cheby2D(0, ix,iy) = cheby(ix);
-      cheby2D(1, ix,iy) = cheby(iy);
+      cheby2D(0, ix,iy) = cheby(0,ix);
+      cheby2D(1, ix,iy) = cheby(0,iy);
     }
   }
   
@@ -72,9 +72,9 @@ int chebyshev3D(int p, darray& cheby3D) {
   for (int iz = 0; iz <= p; ++iz) {
     for (int iy = 0; iy <= p; ++iy) {
       for (int ix = 0; ix <= p; ++ix) {
-	cheby3D(0, ix,iy,iz) = cheby(ix);
-	cheby3D(1, ix,iy,iz) = cheby(iy);
-	cheby3D(2, ix,iy,iz) = cheby(iz);
+	cheby3D(0, ix,iy,iz) = cheby(0,ix);
+	cheby3D(1, ix,iy,iz) = cheby(0,iy);
+	cheby3D(2, ix,iy,iz) = cheby(0,iz);
       }
     }
   }
@@ -101,7 +101,7 @@ int gaussQuad1D(int p, darray& x, darray& w) {
   }
   
   /* Compute eigenvalue decomposition of Jacobi matrix */
-  x.realloc(n);
+  x.realloc(1,n);
   LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', n, toEig.data(), n, x.data());
   
   /* Compute quadrature weights from eigenvectors */
@@ -130,8 +130,8 @@ int gaussQuad2D(int p, darray& x2D, darray& w2D) {
   // Apply 1D quadrature to 2D cube
   for (int iy = 0; iy < n; ++iy) {
     for (int ix = 0; ix < n; ++ix) {
-      x2D(0, ix,iy) = x1D(ix);
-      x2D(1, ix,iy) = x1D(iy);
+      x2D(0, ix,iy) = x1D(0,ix);
+      x2D(1, ix,iy) = x1D(0,iy);
       
       w2D(ix,iy) = w1D(ix)*w1D(iy);
     }
@@ -158,9 +158,9 @@ int gaussQuad3D(int p, darray& x3D, darray& w3D) {
   for (int iz = 0; iz < n; ++iz) {
     for (int iy = 0; iy < n; ++iy) {
       for (int ix = 0; ix < n; ++ix) {
-	x3D(0, ix,iy,iz) = x1D(ix);
-	x3D(1, ix,iy,iz) = x1D(iy);
-	x3D(2, ix,iy,iz) = x1D(iz);
+	x3D(0, ix,iy,iz) = x1D(0,ix);
+	x3D(1, ix,iy,iz) = x1D(0,iy);
+	x3D(2, ix,iy,iz) = x1D(0,iz);
 	
 	w3D(ix,iy,iz) = w1D(ix)*w1D(iy)*w1D(iz);
       }
@@ -172,11 +172,11 @@ int gaussQuad3D(int p, darray& x3D, darray& w3D) {
 
 /**
    Evaluates the 1D Legendre polynomials of order 0:p on [-1,1]
-   at the points specified in x.
+   at the points specified in x. Here, x is a 1 by nx vector
 */
 void legendre(int p, const darray& x, darray& polys) {
   
-  int nx = x.size(0);
+  int nx = x.size(1);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
     polys.realloc(nx, 1);
@@ -193,7 +193,7 @@ void legendre(int p, const darray& x, darray& polys) {
     return;
   // Initialize p_1(x) = x
   for (int i = 0; i < nx; ++i) {
-    polys(i, 1) = x(i);
+    polys(i, 1) = x(0,i);
   }
   if (p == 1)
     return;
@@ -201,7 +201,7 @@ void legendre(int p, const darray& x, darray& polys) {
   // Three-term recurrence relationship
   for (int ip = 0; ip < p-1; ++ip) {
     for (int i = 0; i < nx; ++i) {
-      polys(i,ip+2) = ((2*ip+3)*x(i)*polys(i,ip+1) - (ip+1)*polys(i,ip)) / (ip+2);
+      polys(i,ip+2) = ((2*ip+3)*x(0,i)*polys(i,ip+1) - (ip+1)*polys(i,ip)) / (ip+2);
     }
   }
   return;
@@ -210,12 +210,12 @@ void legendre(int p, const darray& x, darray& polys) {
 
 /**
    Evaluates the 1D derivative of Legendre polynomials of order 0:p 
-   on [-1,1] at the points specified in x.
+   on [-1,1] at the points specified in x. Here, x is a 1 x nx vector.
    Assumes polys has already been initialized by legendre().
 */
 void dlegendre(int p, const darray& x, const darray& polys, darray& dpolys) {
   
-  int nx = x.size(0);
+  int nx = x.size(1);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
     dpolys.realloc(nx, 1);
@@ -240,7 +240,7 @@ void dlegendre(int p, const darray& x, const darray& polys, darray& dpolys) {
   // Three-term recurrence relationship
   for (int ip = 0; ip < p-1; ++ip) {
     for (int i = 0; i < nx; ++i) {
-      dpolys(i,ip+2) = ((2*ip+3)*(x(i)*dpolys(i,ip+1) + polys(i,ip+1))
+      dpolys(i,ip+2) = ((2*ip+3)*(x(0,i)*dpolys(i,ip+1) + polys(i,ip+1))
 			- (ip+1)*dpolys(i,ip)) / (ip+2);
     }
   }
@@ -262,13 +262,13 @@ void legendre2D(int p, const darray& x2D, darray& l2D) {
   }
   
   // Initialize 1D arrays from 2D input
-  darray x{nx};
-  darray y{ny};
+  darray x{1,nx};
+  darray y{1,ny};
   for (int ix = 0; ix < nx; ++ix) {
-    x(ix) = x2D(0, ix, 0);
+    x(0,ix) = x2D(0, ix, 0);
   }
   for (int iy = 0; iy < ny; ++iy) {
-    y(iy) = x2D(1, 0, iy);
+    y(0,iy) = x2D(1, 0, iy);
   }
   
   // Compute 1D Legendre polynomials
@@ -308,13 +308,13 @@ void dlegendre2D(int p, const darray& x2D, darray& dl2D) {
   }
   
   // Initialize 1D arrays from 2D input
-  darray x{nx};
-  darray y{ny};
+  darray x{1,nx};
+  darray y{1,ny};
   for (int ix = 0; ix < nx; ++ix) {
-    x(ix) = x2D(0, ix, 0);
+    x(0,ix) = x2D(0, ix, 0);
   }
   for (int iy = 0; iy < ny; ++iy) {
-    y(iy) = x2D(1, 0, iy);
+    y(0,iy) = x2D(1, 0, iy);
   }
   
   // Compute 1D Legendre polynomials
@@ -370,17 +370,17 @@ void legendre3D(int p, const darray& x3D, darray& l3D) {
   }
   
   // Initialize 1D arrays from 3D input
-  darray x{nx};
-  darray y{ny};
-  darray z{nz};
+  darray x{1,nx};
+  darray y{1,ny};
+  darray z{1,nz};
   for (int ix = 0; ix < nx; ++ix) {
-    x(ix) = x3D(0, ix, 0, 0);
+    x(0,ix) = x3D(0, ix, 0, 0);
   }
   for (int iy = 0; iy < ny; ++iy) {
-    y(iy) = x3D(1, 0, iy, 0);
+    y(0,iy) = x3D(1, 0, iy, 0);
   }
   for (int iz = 0; iz < nz; ++iz) {
-    z(iz) = x3D(2, 0, 0, iz);
+    z(0,iz) = x3D(2, 0, 0, iz);
   }
   
   // Compute 1D Legendre polynomials
@@ -426,17 +426,17 @@ void dlegendre3D(int p, const darray& x3D, darray& dl3D) {
   }
   
   // Initialize 1D arrays from 3D input
-  darray x{nx};
-  darray y{ny};
-  darray z{nz};
+  darray x{1,nx};
+  darray y{1,ny};
+  darray z{1,nz};
   for (int ix = 0; ix < nx; ++ix) {
-    x(ix) = x3D(0, ix, 0, 0);
+    x(0,ix) = x3D(0, ix, 0, 0);
   }
   for (int iy = 0; iy < ny; ++iy) {
-    y(iy) = x3D(1, 0, iy, 0);
+    y(0,iy) = x3D(1, 0, iy, 0);
   }
   for (int iz = 0; iz < nz; ++iz) {
-    z(iz) = x3D(2, 0, 0, iz);
+    z(0,iz) = x3D(2, 0, 0, iz);
   }
   
   // Compute 1D Legendre polynomials

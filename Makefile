@@ -1,5 +1,5 @@
-CC = mpic++
-#mpiicpc
+CC = mpiicpc
+#mpic++
 DEBUG := TRUE
 
 
@@ -15,8 +15,8 @@ endif
 
 ifeq ($(CC), mpiicpc)
  LIBS =
- INCLUDE = -I. -I/usr/include/
- LIBES   = -L. -L/usr/lib/
+ INCLUDE = -I. -I/usr/include
+ LIBES   = -L. -L/usr/lib
 
  CFLAGS = -mkl -std=c++11 ${DEBUG_FLAGS}
  LFLAGS = -mkl -std=c++11 ${DEBUG_FLAGS}

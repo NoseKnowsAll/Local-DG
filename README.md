@@ -13,7 +13,7 @@ First compile the program:
 
 1) On Edison:
 * Ensure `CC` defined as `mpiicpc` in Makefile
-* `source init.sh`
+* `source scripts/init.sh`
 * `make`
 
 2) On Stampede:

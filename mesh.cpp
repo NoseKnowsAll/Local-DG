@@ -157,10 +157,6 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
       eToV(1, eIndex) = xOff2+yOff1;
       eToV(2, eIndex) = xOff1+yOff2;
       eToV(3, eIndex) = xOff2+yOff2;
-      eToV(4, eIndex) = xOff1+yOff1;
-      eToV(5, eIndex) = xOff2+yOff1;
-      eToV(6, eIndex) = xOff1+yOff2;
-      eToV(7, eIndex) = xOff2+yOff2;
     }
   }
   

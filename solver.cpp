@@ -104,8 +104,6 @@ void Solver::precomputeLocalMatrices() {
   // Create nodal representation of the reference bases
   darray lV;
   legendre2D(order, refNodes, lV);
-
-  std::cout << "matrix0" << std::endl;
   
   darray coeffsPhi{order+1,order+1,order+1,order+1};
   for (int ipy = 0; ipy <= order; ++ipy) {
@@ -117,32 +115,23 @@ void Solver::precomputeLocalMatrices() {
   LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, dofs, 
 		lV.data(), dofs, ipiv, coeffsPhi.data(), dofs);
   
-  std::cout << "matrix1" << std::endl;
-  
   // Compute reference bases on the quadrature points
   darray xQ, wQ;
   int sizeQ = gaussQuad2D(2*order, xQ, wQ);
   darray polyQuad, dPolyQuad;
   legendre2D(order, xQ, polyQuad);
   dlegendre2D(order, xQ, dPolyQuad);
-
-  std::cout << "matrix2" << std::endl;
   
   darray phiQ{sizeQ,order+1,order+1};
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
 	      sizeQ, dofs, dofs, 1.0, polyQuad.data(), sizeQ, 
 	      coeffsPhi.data(), dofs, 0.0, phiQ.data(), sizeQ);
-  
-  std::cout << "matrix2.5" << std::endl;
-  
   darray dPhiQ{sizeQ,order+1,order+1,Mesh::DIM};
   for (int l = 0; l < Mesh::DIM; ++l) {
     cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
 		sizeQ, dofs, dofs, 1.0, &dPolyQuad(0,0,0,l), sizeQ, 
 		coeffsPhi.data(), dofs, 0.0, &dPhiQ(0,0,0,l), sizeQ);
   }
-
-  std::cout << "matrix3" << std::endl;
   
   // Store weights*phiQ in polyQuad to avoid recomputing 4 times
   for (int ipy = 0; ipy <= order; ++ipy) {
@@ -167,8 +156,6 @@ void Solver::precomputeLocalMatrices() {
   // Mel overwritten with U*D*U'
   LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'U', dofs,
 		 Mel.data(), dofs, Mipiv.data());
-
-  std::cout << "matrix4" << std::endl;
   
   // Initialize stiffness matrices = integrate(dx_l(phi_i)*phi_j)
   Sels.realloc(dofs,dofs,Mesh::DIM);
@@ -189,16 +176,12 @@ void Solver::precomputeLocalMatrices() {
       }
     }
   }
-
-  std::cout << "matrix5" << std::endl;
   
   // Initialize mass matrix for use along faces
   darray xQF, wQF;
   int fSizeQ = gaussQuad1D(2*order, xQF, wQF);
   int fDofs = (order+1);
   KelsF.realloc(fSizeQ,fDofs, Mesh::DIM);
-
-  std::cout << "matrix5.5" << std::endl;
   for (int l = 0; l < Mesh::DIM; ++l) {
     double scaleL = Jacobian/alpha(l);
     for (int iDofs = 0; iDofs < fDofs; ++iDofs) {
@@ -207,8 +190,6 @@ void Solver::precomputeLocalMatrices() {
       }
     }
   }
-
-  std::cout << "matrix6" << std::endl;
   
 }
 
@@ -347,8 +328,6 @@ void Solver::dgTimeStep() {
   */
   MPI_Request rk4Reqs[2*MPIUtil::N_FACES];
   
-  exit(0);
-  
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Time stepping until tf = " << tf << std::endl;
   }
@@ -424,7 +403,7 @@ void Solver::dgTimeStep() {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
 	    
-	    if (istage == nStages-1 && iK == 0 && iS == 4 && mpi.rank == mpi.ROOT) {
+	    if (istage == nStages-1 && iK == 0 && iS == 3 && mpi.rank == mpi.ROOT) {
 	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
 	    }
 	  }
