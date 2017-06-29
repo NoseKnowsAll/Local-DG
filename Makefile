@@ -5,8 +5,12 @@ DEBUG := TRUE
 
 
 
-ifdef ($(DEBUG))
- DEBUG_FLAGS = -O0 -g -traceback -Wcheck -ftrapuv -debug all
+ifdef DEBUG
+ ifeq ($(CC), mpiicpc)
+  DEBUG_FLAGS = -O0 -g -traceback -Wcheck -ftrapuv -debug all -DDEBUG
+ else
+  DEBUG_FLAGS = -O0 -g -Wall -Wextra -Wno-unused-parameter -DDEBUG
+ endif
 endif
 
 ifeq ($(CC), mpiicpc)
@@ -14,8 +18,8 @@ ifeq ($(CC), mpiicpc)
  INCLUDE = -I. -I/usr/include/
  LIBES   = -L. -L/usr/lib/
 
- CFLAGS = -mkl ${DEBUG_FLAGS}
- LFLAGS = -mkl ${DEBUG_FLAGS}
+ CFLAGS = -mkl -std=c++11 ${DEBUG_FLAGS}
+ LFLAGS = -mkl -std=c++11 ${DEBUG_FLAGS}
 else
  LAPACK = -llapacke -llapack -lblas -lm
  LIBS    = ${LAPACK}

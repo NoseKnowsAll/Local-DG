@@ -66,6 +66,8 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
       mshFile >> eToV(i, k);
     }
   }
+
+  return true;
   
 }
 
@@ -73,15 +75,29 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview.
 */
-bool initXYZVFile(const std::string& filename, const std::string& valuename, int nStates) {
+bool initXYZVFile(const std::string& filename, int dim, const std::string& valuename, int nStates) {
   
   std::ofstream outFile(filename, std::ios::out);
   if (outFile.fail()) {
     std::cerr << "ERROR: could not open file " << filename << std::endl;
     return false;
   }
+
+  switch (dim) {
+  case 1:
+    outFile << "X, ";
+    break;
+  case 2:
+    outFile << "X, Y, ";
+    break;
+  case 3:
+    outFile << "X, Y, Z, ";
+    break;
+  default:
+    outFile << "X3D, Y3D, Z3D, ";
+    break;
+  }
   
-  outFile << "X, Y, Z, ";
   for (int iS = 0; iS < nStates-1; ++iS) {
     outFile << valuename << iS << ", ";
   }
@@ -95,11 +111,11 @@ bool initXYZVFile(const std::string& filename, const std::string& valuename, int
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview in a time series output.
 */
-bool initXYZVFile(const std::string& filename, int timeseries, const std::string& valuename, int nStates) {
+bool initXYZVFile(const std::string& filename, int dim, int timeseries, const std::string& valuename, int nStates) {
   std::ostringstream oss;
   oss << filename << "." << timeseries;
   
-  return initXYZVFile(oss.str(), valuename, nStates);
+  return initXYZVFile(oss.str(), dim, valuename, nStates);
 }
 
 /**
@@ -115,7 +131,7 @@ bool exportToXYZVFile(const std::string& filename, const darray& globalCoords, c
     return false;
   }
   
-  // Assumes array is of size (:,nStates;:)
+  // Assumes array is of size (:,nStates,:)
   int dofs = arr.size(0);
   int nStates = arr.size(1);
   long long totalSize = 1;

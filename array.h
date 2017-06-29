@@ -8,9 +8,6 @@
 #include <numeric>
 #include <cmath>
 
-/** Uncomment in order to view error every time out-of-bounds exception is thrown */
-//#define DEBUG
-
 #define ARRAY_MAX_NDIM 7
 typedef int dgSize;
 

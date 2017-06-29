@@ -49,7 +49,7 @@ public:
   MPI_Datatype MPI_FACE;
   
   /** Dimension of MPI topology we are modeling */ 
-  const static int DIM = 3;
+  const static int DIM = 2;
   /** Number of faces per MPI rank */
   const static int N_FACES = 2*DIM;
   /** Root node rank */

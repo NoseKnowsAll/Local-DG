@@ -36,10 +36,10 @@ private:
   iarray Mipiv;
   darray Sels;
   darray Kels;
-  darray Kels2D;
+  darray KelsF;
   
-  darray Interp2D;
-  darray Interp3D;
+  darray InterpF;
+  darray InterpV;
   
   darray u;
   

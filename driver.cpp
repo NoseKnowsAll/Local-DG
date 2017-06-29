@@ -17,7 +17,6 @@ int main(int argc, char *argv[]) {
     std::cout << "MPI tasks = " << mpi.np << std::endl;
   }
   
-  /*
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing mesh..." << std::endl;
   }
@@ -45,7 +44,7 @@ int main(int argc, char *argv[]) {
   Solver dgSolver{p, dtSnaps, tf, L, mesh};
   
   dgSolver.dgTimeStep();
-  */
+  // */
   
   MPI_Finalize();
   return 0;

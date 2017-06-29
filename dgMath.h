@@ -22,7 +22,7 @@ void kron(const darray& A, int ma, int na,
 	  darray& C);
 
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
-int chebyshev(int p, darray& cheby);
+int chebyshev1D(int p, darray& cheby);
 
 /** Edits cheby2D to contain the Chebyshev points of order p in 2D on [-1,1]^2 */
 int chebyshev2D(int p, darray& cheby2D);
@@ -35,7 +35,7 @@ int chebyshev3D(int p, darray& cheby3D);
    and weights w using the eigenvalues/eigenvectors of 
    Jacobi matrix from MATH 224A. They are on the domain [-1,1]
 */
-int gaussQuad(int p, darray& x, darray& w);
+int gaussQuad1D(int p, darray& x, darray& w);
 
 /**
    Given an order p, computes the Gaussian quadrature points x2D 

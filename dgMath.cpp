@@ -34,7 +34,7 @@ void kron(const darray& A, int ma, int na,
 }
 
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
-int chebyshev(int p, darray& cheby) {
+int chebyshev1D(int p, darray& cheby) {
   
   cheby.realloc(p+1);
   for (int i = 0; i <= p; ++i) {
@@ -48,7 +48,7 @@ int chebyshev(int p, darray& cheby) {
 int chebyshev2D(int p, darray& cheby2D) {
   
   darray cheby;
-  chebyshev(p, cheby);
+  chebyshev1D(p, cheby);
   
   cheby2D.realloc(2, p+1,p+1);
   for (int iy = 0; iy <= p; ++iy) {
@@ -66,7 +66,7 @@ int chebyshev2D(int p, darray& cheby2D) {
 int chebyshev3D(int p, darray& cheby3D) {
   
   darray cheby;
-  chebyshev(p, cheby);
+  chebyshev1D(p, cheby);
   
   cheby3D.realloc(3, p+1,p+1,p+1);
   for (int iz = 0; iz <= p; ++iz) {
@@ -88,7 +88,7 @@ int chebyshev3D(int p, darray& cheby3D) {
    and weights w using the eigenvalues/eigenvectors of 
    Jacobi matrix from MATH 224A. They are on the domain [-1,1]
 */
-int gaussQuad(int p, darray& x, darray& w) {
+int gaussQuad1D(int p, darray& x, darray& w) {
   int n = (int) ceil((p+1)/2.0);
   
   /* Initialize upper triangular (symmetric) Jacobi matrix */
@@ -102,7 +102,7 @@ int gaussQuad(int p, darray& x, darray& w) {
   
   /* Compute eigenvalue decomposition of Jacobi matrix */
   x.realloc(n);
-  int info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', n, toEig.data(), n, x.data());
+  LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', n, toEig.data(), n, x.data());
   
   /* Compute quadrature weights from eigenvectors */
   w.realloc(n);
@@ -122,7 +122,7 @@ int gaussQuad2D(int p, darray& x2D, darray& w2D) {
   
   // Get 1D quadrature pts/weights
   darray x1D, w1D;
-  int n = gaussQuad(p, x1D, w1D);
+  int n = gaussQuad1D(p, x1D, w1D);
   
   x2D.realloc(2, n,n);
   w2D.realloc(n,n);
@@ -149,7 +149,7 @@ int gaussQuad3D(int p, darray& x3D, darray& w3D) {
   
   // Get 1D quadrature pts/weights
   darray x1D, w1D;
-  int n = gaussQuad(p, x1D, w1D);
+  int n = gaussQuad1D(p, x1D, w1D);
   
   x3D.realloc(3, n,n,n);
   w3D.realloc(n,n,n);
@@ -520,8 +520,8 @@ void interpolationMatrix1D(const darray& xFrom, const darray& xTo, darray& INTER
     coeffsPhi(ipx,ipx) = 1.0;
   }
   lapack_int ipiv[nFrom];
-  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
-			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute reference bases on the output points
   int nTo = xTo.size(1);
@@ -558,8 +558,8 @@ void interpolationMatrix2D(const darray& xFrom, const darray& xTo, darray& INTER
     }
   }
   lapack_int ipiv[nFrom];
-  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
-			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute reference bases on the output points
   int nTo = xTo.size(1)*xTo.size(2);
@@ -598,8 +598,8 @@ void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTER
     }
   }
   lapack_int ipiv[nFrom];
-  int info = LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
-			   lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute reference bases on the output points
   int nTo = xTo.size(1)*xTo.size(2)*xTo.size(3);
