@@ -34,17 +34,16 @@ int main(int argc, char *argv[]) {
   }
   
   int p = 2;
-  double tf = 10.0;
-  int dtSnaps = 30;
+  double tf = 2*M_PI;
+  double dtSnap = M_PI/10.0;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "p = " << p << std::endl;
     std::cout << "tf = " << tf << std::endl;
     std::cout << "nx = " << nx << std::endl;
   }
-  Solver dgSolver{p, dtSnaps, tf, L, mesh};
+  Solver dgSolver{p, dtSnap, tf, L, mesh};
   
   dgSolver.dgTimeStep();
-  // */
   
   MPI_Finalize();
   return 0;

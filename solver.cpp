@@ -4,13 +4,13 @@
 Solver::Solver() : Solver{2, 10, 1.0, 1.0, Mesh{}} { }
 
 /** Main constructor */
-Solver::Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh) :
+Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) :
   mesh{_mesh},
   mpi{_mesh.mpi},
   tf{_tf},
   dt{},
   timesteps{},
-  dtSnaps{_dtSnaps},
+  stepsPerSnap{},
   order{_p},
   dofs{},
   refNodes{},
@@ -27,30 +27,15 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh) :
 {
   
   // Initialize time stepping and physics information
-  //double maxVel = std::accumulate(p.a, p.a+Mesh::DIM, 0.0);
-  p.pars[0]  = 1600.0; // Reynolds
-  p.pars[1]  = .71;    // Prandtl
-  p.gamma    = 1.4;    // adiabatic gas constant
-  p.M0       = 0.1;    // Mach
-  p.R        = 8.314;  // ideal gas constant
-  p.rho0     = 1.0;                    // Necessary
-  p.V0       = 1.0;                    // Necessary
-  p.L        = _L;
-  
-  //p.V0 = p.params[0]*p.mu/(p.rho0*p.L);
-  p.c0 = p.V0/p.M0;
-  p.p0 = p.rho0*p.c0*p.c0/p.gamma;      // Necessary
-  p.tc = p.L/p.V0;                      // Necessary
-  p.T0 = p.p0/(p.R*p.rho0);
-  double maxVel = p.V0;
+  double maxVel = std::accumulate(p.a, p.a+Mesh::DIM, 0.0);
   
   // Choose dt based on CFL condition - DEPENDS ON PDE
   dt = 0.01*std::min(mesh.minDX, mesh.minDY)/(maxVel*(2*order+1));
-  // Change tf = 10*tc in order to visualize most turbulent structures
-  //tf = 10*p.tc;
   // Ensure we will exactly end at tf
   timesteps = std::ceil(tf/dt);
   dt = tf/timesteps;
+  // Compute number of time steps to reach dtsnaps
+  stepsPerSnap = std::ceil(dtSnap/dt);
   
   // Initialize nodes within elements
   chebyshev2D(order, refNodes);
@@ -59,21 +44,15 @@ Solver::Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh) :
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
   
-  nStates = 4;
+  nStates = 2;
   u.realloc(dofs, nStates, mesh.nElements);
   initialCondition(); // sets u
-
-  std::cout << "solver1" << std::endl;
   
   // Compute interpolation matrices
   precomputeInterpMatrices();
-
-  std::cout << "solver2" << std::endl;
   
   // Compute local matrices
   precomputeLocalMatrices();
-
-  std::cout << "solver3" << std::endl;
   
 }
 
@@ -205,24 +184,13 @@ void Solver::initialCondition() {
 	double y = mesh.globalCoords(1,vID,k);
 	
 	//u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
+	u(vID, 0, k) = -std::sin(x);
+	u(vID, 1, k) = -std::sin(y);
 	/*
 	  u(vID, 0, k) = std::exp(-100*std::pow(x-.5, 2.0));
 	  u(vID, 1, k) = std::exp(-100*std::pow(y-.5, 2.0));
 	  u(vID, 2, k) = std::exp(-100*std::pow(z-.5, 2.0));
 	*/
-	
-	// p
-	double pressure = p.p0 + (p.rho0*p.V0*p.V0/16.0)
-	  *(std::cos(2*x/p.L)+std::cos(2*y/p.L));
-	// rho
-	u(vID, 0, k) = pressure/(p.R*p.T0);
-	// rho*v_0
-	u(vID, 1, k) = p.rho0*p.V0*std::sin(x/p.L)*std::cos(y/p.L);
-	// rho*v_1
-	u(vID, 2, k) = -p.rho0*p.V0*std::cos(x/p.L)*std::sin(y/p.L);
-	// rho*E
-	u(vID, 3, k) = pressure/(p.gamma-1) 
-	    + ( u(vID,1,k)*u(vID,1,k) + u(vID,2,k)*u(vID,2,k) )/(2.0*u(vID,0,k));
 	
       }
     }
@@ -233,7 +201,7 @@ void Solver::initialCondition() {
 /** Computes the true convection solution at time t for the convection problem */
 void Solver::trueSolution(darray& uTrue, double t) const {
   
-  //int N = 2;
+  int N = 2;
   
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int iy = 0; iy < order+1; ++iy) {
@@ -248,27 +216,11 @@ void Solver::trueSolution(darray& uTrue, double t) const {
 	  *std::sin(2*fmod(y-p.a[1]*t+5.0,1.0)*M_PI)
 	  *std::sin(2*fmod(z-p.a[2]*t+5.0,1.0)*M_PI);
 	  */
-	/*
-	// True solution = conv-diff
-	uTrue(vID, 0, k) = 0.0;
-	for (int i = -N; i <= N; ++i) {
-	  uTrue(vID, 0, k) += std::exp(-100/(1+400*p.eps*t)*
-	       (std::pow(std::fmod(x-t,1.0)-.5+i,2.0)))
-	    /std::sqrt(1+400*p.eps*t);
-	}
-	uTrue(vID, 1, k) = 0.0;
-	for (int i = -N; i <= N; ++i) {
-	  uTrue(vID, 1, k) += std::exp(-100/(1+400*p.eps*t)*
-	       (std::pow(std::fmod(y-t,1.0)-.5+i,2.0)))
-	    /std::sqrt(1+400*p.eps*t);
-	}
-	uTrue(vID, 2, k) = 0.0;
-	for (int i = -N; i <= N; ++i) {
-	  uTrue(vID, 2, k) += std::exp(-100/(1+400*p.eps*t)*
-	       (std::pow(std::fmod(z-t,1.0)-.5+i,2.0)))
-	    /std::sqrt(1+400*p.eps*t);
-	}
-	*/
+	
+	// TODO: True solution = conv-diff
+	uTrue(vID, 0, k) = -std::sin(x-p.a[0]*t)*std::exp(-p.eps*t);
+	uTrue(vID, 1, k) = -std::sin(y-p.a[1]*t)*std::exp(-p.eps*t);
+	
 	/* // True solution = initial solution u0(x-a*t)
 	   uTrue(vID, 0, k) = std::exp(-100*std::pow(std::fmod(x-t,1.0)-.5, 2.0));
 	   uTrue(vID, 1, k) = std::exp(-100*std::pow(std::fmod(y-t,1.0)-.5, 2.0));
@@ -316,9 +268,6 @@ void Solver::dgTimeStep() {
   darray DuInterpV{InterpV.size(0), nStates, mesh.nElements, Mesh::DIM};
   darray uTrue{dofs, nStates, mesh.nElements, 1};
   
-  darray kes{timesteps};
-  darray keDissipation{timesteps-2};
-  
   int nBElems = max(mesh.mpiNBElems);
   darray toSend{nQF, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
   darray toRecv{nQF, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
@@ -337,28 +286,28 @@ void Solver::dgTimeStep() {
   // Loop over time steps
   for (int iStep = 0; iStep < timesteps; ++iStep) {
     
-    if (mpi.rank == mpi.ROOT) {
+    /*if (mpi.rank == mpi.ROOT) {
       std::cout << "time = " << iStep*dt << std::endl;
-    }
+    }*/
     
-    if (iStep % dtSnaps == 0) {
+    if (iStep % stepsPerSnap == 0) {
       if (mpi.rank == mpi.ROOT) {
 	auto endTime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = endTime-startTime;
-	std::cout << "Saving snapshot " << iStep/dtSnaps << "...\n";
+	std::cout << "Saving snapshot " << iStep/stepsPerSnap << "...\n";
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
-      
-      // Output snapshot files
-      bool success = initXYZVFile("output/xyzu.txt", Mesh::DIM, iStep/dtSnaps, "u", nStates);
-      if (!success)
-	exit(-1);
-      success = exportToXYZVFile("output/xyzu.txt", iStep/dtSnaps, mesh.globalCoords, u);
-      if (!success)
-	exit(-1);
-      
-      /* // TODO: debugging for convection problem
       trueSolution(uTrue, iStep*dt);
+      // Output snapshot files
+      bool success = initXYZVFile("output/xyzutrue.txt", Mesh::DIM, iStep/stepsPerSnap, "utrue", nStates);
+      if (!success)
+	exit(-1);
+      success = exportToXYZVFile("output/xyzutrue.txt", iStep/stepsPerSnap, mesh.globalCoords, uTrue);
+      if (!success)
+	exit(-1);
+      
+      // TODO: debugging for convection problem
+      
       double norm = 0.0;
       for (int iK = 0; iK < mesh.nElements; ++iK) {
 	for (int iS = 0; iS < nStates; ++iS) {
@@ -372,15 +321,6 @@ void Solver::dgTimeStep() {
       }
       std::cout << "infinity norm at time " << iStep*dt << " = " << norm << std::endl;
       // END TODO */
-      
-      /*// TODO: debugging - exit after 10 snapshots
-      if (iStep/dtSnaps == 10) {
-	if (mpi.rank == mpi.ROOT) {
-	  std::cout << "exiting for debugging purposes...\n";
-	}
-	exit(0);
-      } */
-      
       
     }
     
@@ -403,17 +343,12 @@ void Solver::dgTimeStep() {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
 	    
-	    if (istage == nStages-1 && iK == 0 && iS == 3 && mpi.rank == mpi.ROOT) {
+	    /*if (istage == nStages-1 && iK == 0 && iS == 3 && mpi.rank == mpi.ROOT) {
 	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
-	    }
+	    }*/
 	  }
 	}
       }
-    }
-    
-    kes(iStep) = computeKE(uInterpV);
-    if (iStep > 1) {
-      keDissipation(iStep-2) = -(kes(iStep) - kes(iStep-2))/(2*dt);
     }
     
   }
@@ -422,9 +357,6 @@ void Solver::dgTimeStep() {
   std::chrono::duration<double> elapsed = endTime-startTime;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Finished time stepping. Time elapsed = " << elapsed.count() << std::endl;
-  
-    std::cout << "Outputting kinetic energy dissipation for Navier-Stokes: " << std::endl;
-    std::cout << keDissipation << std::endl;
   }
   
 }
@@ -829,7 +761,7 @@ void Solver::viscousDGVolume(const darray& uInterpV, const darray& DuInterpV, da
     }
   }
   
-  // TODO: is it faster to do matrix vector multiplication instead of having to reorder data into huge fc array?
+  // TODO: is it faster to do matrix vector multiplications instead of having to reorder data into huge fc array?
   
   // residual += Kels(:, l)*fc_l(uInterpV)
   for (int l = 0; l < Mesh::DIM; ++l) {
@@ -982,6 +914,7 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
 
 /** Computes the kinetic energy for a given solution to Navier-Stokes */
 double Solver::computeKE(const darray& uInterpV) const {
+  /*
   double globalkEnergy = 0.0;
   double localkEnergy = 0.0;
   
@@ -1011,6 +944,8 @@ double Solver::computeKE(const darray& uInterpV) const {
   globalkEnergy = globalkEnergy/(p.rho0*std::pow(2*M_PI*p.L, 3.0));
   
   return globalkEnergy;
+  */
+  return 0.0;
 }
 
 
@@ -1019,13 +954,13 @@ double Solver::computeKE(const darray& uInterpV) const {
 /** Evaluates the actual convection flux function for the PDE */
 void Solver::fluxC(const darray& uK, darray& fluxes) const {
   
-  /* // Convection-diffusion along each dimension
+  // Convection-diffusion along each dimension
   fluxes.fill(0.0);
   for (int l = 0; l < Mesh::DIM; ++l) {
-    fluxes(l,l) = uK(l);
+    fluxes(l,l) = p.a[l]*uK(l);
   }
-  */
   
+  /*
   // Fi2d for Navier-Stokes
   double t1;
   double t3;
@@ -1051,19 +986,19 @@ void Solver::fluxC(const darray& uK, darray& fluxes) const {
   fluxes[5] = fluxes[2];
   fluxes[6] = t8 * t3 + t6 - t11;
   fluxes[7] = fluxes[4] * t14 * t3;
-  
+  */
 }
 
 /** Evaluates the actual viscosity flux function for the PDE */
 void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) const {
   
-  /* // Convection-diffusion along each dimension
+  // Convection-diffusion along each dimension
   fluxes.fill(0.0);
   for (int l = 0; l < Mesh::DIM; ++l) {
     fluxes(l,l) = p.eps*DuK(l,l);
   }
-  */
-  
+
+  /*
   // Fv2d for Navier-Stokes
   double t2;
   double t30;
@@ -1117,6 +1052,7 @@ void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) const {
   t57 = 0.4e1 / 0.3e1 * t17 - 0.2e1 / 0.3e1 * t9;
   fluxes[6] = t57 * t21;
   fluxes[7] = (t32 * t3 * t6 + t57 * t13 * t6 + 0.7e1 / 0.5e1 * t38 * ((DuK[7] - t12 * t40 * t6) * t6 - t47 * t30 - t49 * t16)) * t21;
+  */
 
 }
 
@@ -1127,7 +1063,7 @@ void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) const {
 void Solver::numericalFluxC(const darray& uN, const darray& uK, 
 			    const darray& normalK, darray& fluxes) const {
   
-  /* // Upwinding for convection-diffusion in 3 dimensions
+  // Upwinding for convection-diffusion in 3 dimensions
   darray FK{nStates,Mesh::DIM};
   darray FN{nStates,Mesh::DIM};
   
@@ -1141,8 +1077,8 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
       fluxes(iS) += (normalK(l) > 0.0 ? FK(iS, l) : FN(iS, l))*normalK(l);
     }
   }
-  */
-  
+
+  /*
   // roe2d from Navier-Stokes
   double t17;
   double t46;
@@ -1278,5 +1214,5 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   fluxes[1] = 0.5e0 * t2 * t13 + 0.5e0 * t17 * t26 + 0.5e0 * t5 * t143 - 0.5e0 * t51 * t119 - 0.50e0 * t148 * t35 * t38 - 0.5e0 * t155 * t5;
   fluxes[2] = 0.5e0 * t8 * t13 + 0.5e0 * t22 * t26 + 0.5e0 * t10 * t143 - 0.5e0 * t51 * t122 - 0.50e0 * t148 * t46 * t38 - 0.5e0 * t155 * t10;
   fluxes[3] = 0.5e0 * (0.14e1 * t55 - t69) * t13 + 0.5e0 * (0.14e1 * t76 - t90) * t26 - 0.5e0 * t51 * (t55 - t76) - 0.50e0 * t148 * t94 * t38 - 0.5e0 * t155 * t50;
-  
+  */
 }

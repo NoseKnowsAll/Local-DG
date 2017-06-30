@@ -19,6 +19,7 @@ public:
   double z;
 
   Point();
+  Point(double _x, double _y);
   Point(double _x, double _y, double _z);
   Point(const Point& other);
   

@@ -3,6 +3,8 @@
 /** Point functionality */
 Point::Point() : Point{0.0, 0.0, 0.0} {}
 
+Point::Point(double _x, double _y) : Point{_x, _y, 0.0} {}
+
 Point::Point(double _x, double _y, double _z) : x{_x}, y{_y}, z{_z} { }
 
 Point::Point(const Point& other) {

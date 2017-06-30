@@ -26,7 +26,7 @@ private:
   double tf;
   double dt;
   dgSize timesteps;
-  int dtSnaps;
+  int stepsPerSnap;
   
   int order;
   int dofs;
@@ -43,13 +43,13 @@ private:
   
   darray u;
   
-  /* For convection-diffusion 
+  // For convection-diffusion 
   typedef struct {
-    const double a[Mesh::DIM] = {1,2,3};
+    const double a[Mesh::DIM] = {1,2};
     const double eps = 1e-2;
   } physics;
-  */
-  
+
+  /* // For Navier-Stokes
   typedef struct {
     double pars[2]; // Reynolds number, Prandtl number
     double gamma;   // adiabatic gas constant = ratio of specific heats = 1.4 in ideal gas
@@ -64,7 +64,7 @@ private:
     double T0;      // background temperature
     double tc;      // characteristic convective time
     double R;       // ideal gas constant
-  } physics;
+    } physics; */
   
   physics p;
   
@@ -108,7 +108,7 @@ private:
   
 public:
   Solver();
-  Solver(int _p, int _dtSnaps, double _tf, double _L, const Mesh& _mesh);
+  Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh);
   
   void dgTimeStep();
   

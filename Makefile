@@ -1,6 +1,6 @@
-CC = mpiicpc
-#mpic++
-DEBUG := TRUE
+CC = mpic++
+#mpiicpc
+DEBUG := 
 
 
 
