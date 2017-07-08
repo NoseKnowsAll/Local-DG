@@ -46,6 +46,7 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   
   nStates = 2;
   u.realloc(dofs, nStates, mesh.nElements);
+  initMaterialProps(); // sets mu, lambda
   initialCondition(); // sets u
   
   // Compute interpolation matrices
@@ -172,6 +173,48 @@ void Solver::precomputeLocalMatrices() {
   
 }
 
+/** Initializes lambda, mu arrays according to file info */
+void Solver::initMaterialProps() {
+  darray vp, vs, rhoIn;
+  darray deltas{Mesh::DIM};
+  darray origins{Mesh::DIM};
+  bool fileExists = readProps(vp, vs, rhoIn, origins, deltas);
+  
+  lambda.realloc(dofs, mesh.nElements);
+  mu.realloc(dofs, mesh.nElements);
+  rho.realloc(dofs, mesh.nElements);
+
+  if (!fileExists) {
+    // Use reasonable constants
+    double vpConst = 2000.0;
+    double vsConst = 800.0;
+    double rhoConst = 1.0;
+    lambda = rhoConst*(vpConst*vpConst - 2*vsConst*vsConst);
+    mu = rhoConst*(vsConst*vsConst);
+    rho = rhoConst;
+  }
+  else {
+    // Interpolate data from grid onto nodes
+    for (int k = 0; k < mesh.nElements; ++k) {
+      for (int iN = 0; iN < dofs; ++iN) {
+	darray coord{&mesh.globalCoords(0,iN,k), Mesh::DIM};
+	double vpConst = gridInterp(coord, vp, origins, deltas);
+	double vsConst = gridInterp(coord, vs, origins, deltas);
+	double rhoConst = gridInterp(coord, rhoIn, origins, deltas);
+	
+	// Isotropic elastic media formula
+	lambda(iN,k) = rhoConst*(vpConst*vpConst - 2*vsConst*vsConst);
+	mu(iN,k) = rhoConst*(vsConst*vsConst);
+	rho(iN,k) = rhoConst;
+	
+      }
+    }
+  }
+  
+  
+}
+
+/** Sets u according to an initial condition */
 void Solver::initialCondition() {
   
   // Sin function allowing for periodic initial condition
@@ -570,7 +613,7 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
       auto nF = mesh.eToF(iF, iK);
       auto nK = mesh.eToE(iF, iK);
       
-      darray normalK{&mesh.normals(0, iF, iK), 3};
+      darray normalK{&mesh.normals(0, iF, iK), Mesh::DIM};
       
       for (int iFQ = 0; iFQ < nQF; ++iFQ) {
 	
@@ -680,7 +723,7 @@ void Solver::viscousDGFlux(const darray& uInterpF, const darray& DuInterpF, darr
       auto nF = mesh.eToF(iF, iK);
       auto nK = mesh.eToE(iF, iK);
       
-      darray normalK{&mesh.normals(0, iF, iK), 3};
+      darray normalK{&mesh.normals(0, iF, iK), Mesh::DIM};
       
       for (int iFQ = 0; iFQ < nQF; ++iFQ) {
 	

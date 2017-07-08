@@ -21,6 +21,10 @@ void kron(const darray& A, int ma, int na,
 	  const darray& B, int mb, int nb,
 	  darray& C);
 
+/** Linearly interpolates input, cube dataset to get data value at a specified position */
+double gridInterp(const darray& pos,
+		  const darray& data, const darray& origins, const darray& deltas);
+
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
 int chebyshev1D(int p, darray& cheby);
 

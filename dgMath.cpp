@@ -33,6 +33,102 @@ void kron(const darray& A, int ma, int na,
   //C.resize(mb*ma,nb*na);
 }
 
+/** Linearly interpolates input, cube dataset to get data value at a specified position */
+double gridInterp(const darray& pos,
+		  const darray& data, const darray& origins, const darray& deltas) {
+  
+  int dim = pos.size(0);
+  double eps = 1e-8;
+  
+  darray index{dim};
+  barray onInt{dim};
+  int interpDims = dim;
+  // Compute index into structured grid that position maps to
+  for(int l = 0; l < dim; ++l) {
+    index(l) = (pos(l) - origins(l))/deltas(l);
+    if (index(l) < 0.0 || index(l) > data.size(l)-1) {
+      std::cerr << "ERROR: Trying to interpolate to node that is outside of the dataset domain!" << std::endl;
+      return -1.0;
+    }
+    if (std::abs(std::round(index(l))-index(l)) < eps*deltas(l)) {
+      onInt(l) = true;
+      interpDims--;
+    }
+    else
+      onInt(l) = false;
+  }
+  
+  // Index is perfectly aligned on grid already - no interpolation necessary
+  if (interpDims == 0) {
+    long long offset = 0;
+    for (int l = 0; l < dim; ++l) {
+      offset += data.stride(l)*(long long)std::round(index(l));
+    }
+    double toReturn = data[offset];
+    return toReturn;
+  }
+  
+  std::cout << interpDims << std::endl;
+  
+  // Compute weights = normalized volume of ND rectangular prism in direction of corner
+  darray weights{1<<interpDims};
+  for (int i = 0; i < (1<<interpDims); ++i) {
+    weights(i) = 1.0;
+  }
+  
+  int arrayDim = 0;
+  for (int l = 0; l < dim; ++l) {
+    if (!onInt(l)) {
+      
+      double factor0 = index(l) - std::floor(index(l));
+      double factor1 = std::ceil(index(l)) - index(l);
+      for (int i = 0; i < (1<<interpDims); ++i) {
+	if ((i >> arrayDim) & 1) {
+	  weights(i) *= factor0;
+	}
+	else {
+	  weights(i) *= factor1;
+	}
+      }
+      
+      arrayDim++;
+    }
+    
+  }
+
+  std::cout << "weights = " << weights << std::endl;
+  
+  // Compute weighted sum of neighboring values
+  double toReturn = 0.0;
+
+  for (int i = 0; i < (1<<interpDims); ++i) {
+    
+    long long offset = 0;
+    arrayDim = 0;
+    for (int l = 0; l < dim; ++l) {
+      if (onInt(l)) {
+	offset += data.stride(l)*(long long)std::round(index(l));
+      }
+      else {
+	long long localIndex;
+	if ((i >> arrayDim) & 1)
+	  localIndex = (long long)std::ceil(index(l));
+	else
+	  localIndex = (long long)std::floor(index(l));
+	
+	offset += data.stride(l)*localIndex;
+	
+	arrayDim++;
+      }
+    }
+
+    // Actually compute weighted sum
+    toReturn += weights(i)*data[offset];
+  }
+  return toReturn;
+  
+}
+
 /** Edits cheby to contain the Chebyshev points of order p on [-1,1] */
 int chebyshev1D(int p, darray& cheby) {
   

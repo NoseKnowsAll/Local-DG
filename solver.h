@@ -43,6 +43,10 @@ private:
   
   darray u;
   
+  darray lambda;
+  darray mu;
+  darray rho;
+  
   // For convection-diffusion 
   typedef struct {
     const double a[Mesh::DIM] = {1,2};
@@ -70,6 +74,8 @@ private:
   
   void precomputeLocalMatrices();
   void precomputeInterpMatrices();
+  
+  void initMaterialProps();
   void initialCondition();
   void trueSolution(darray& uTrue, double t) const;
   

@@ -23,6 +23,12 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
 	      int& nVertices, int& nElements, darray& vertices, iarray& eToV);
 
 /**
+   Reads in the material properties from files
+   Also initializes origins and deltas for use throughout program
+*/
+bool readProps(darray& vp, darray& vs, darray& rhoIn, darray& origins, darray& deltas);
+
+/**
    Clears a file and sets up the X-Y-Z-V headers for first time use.
    For use with Paraview.
 */
