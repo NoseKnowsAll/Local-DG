@@ -62,7 +62,7 @@ double gridInterp(const darray& pos,
   if (interpDims == 0) {
     long long offset = 0;
     for (int l = 0; l < dim; ++l) {
-      offset += data.stride(l)*(long long)std::round(index(l));
+      offset += data.stride(l)*static_cast<long long>(std::round(index(l)));
     }
     double toReturn = data[offset];
     return toReturn;
@@ -107,14 +107,14 @@ double gridInterp(const darray& pos,
     arrayDim = 0;
     for (int l = 0; l < dim; ++l) {
       if (onInt(l)) {
-	offset += data.stride(l)*(long long)std::round(index(l));
+	offset += data.stride(l)*static_cast<long long>(std::round(index(l)));
       }
       else {
 	long long localIndex;
 	if ((i >> arrayDim) & 1)
-	  localIndex = (long long)std::ceil(index(l));
+	  localIndex = static_cast<long long>(std::ceil(index(l)));
 	else
-	  localIndex = (long long)std::floor(index(l));
+	  localIndex = static_cast<long long>(std::floor(index(l)));
 	
 	offset += data.stride(l)*localIndex;
 	

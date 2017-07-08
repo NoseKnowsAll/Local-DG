@@ -26,28 +26,19 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   p{}
 {
   
-  // Initialize time stepping and physics information
-  double maxVel = std::accumulate(p.a, p.a+Mesh::DIM, 0.0);
-  
-  // Choose dt based on CFL condition - DEPENDS ON PDE
-  dt = 0.01*std::min(mesh.minDX, mesh.minDY)/(maxVel*(2*order+1));
-  // Ensure we will exactly end at tf
-  timesteps = std::ceil(tf/dt);
-  dt = tf/timesteps;
-  // Compute number of time steps to reach dtsnaps
-  stepsPerSnap = std::ceil(dtSnap/dt);
-  
   // Initialize nodes within elements
   chebyshev2D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2);
   mesh.setupNodes(refNodes, order);
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
-  
+
+  // Initialize u and p
   nStates = 2;
   u.realloc(dofs, nStates, mesh.nElements);
-  initMaterialProps(); // sets mu, lambda
+  initMaterialProps(); // sets mu, lambda, rho
   initialCondition(); // sets u
+  initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
   
   // Compute interpolation matrices
   precomputeInterpMatrices();
@@ -57,7 +48,7 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   
 }
 
-/** Precomputes all the interpolation matrices used by Local DG method */
+/** Precomputes all the interpolation matrices used by DG method */
 void Solver::precomputeInterpMatrices() {
   
   // 1D interpolation matrix for use on faces
@@ -78,7 +69,7 @@ void Solver::precomputeInterpMatrices() {
   
 }
 
-/** Precomputes all the local matrices used by Local DG method */
+/** Precomputes all the local matrices used by DG method */
 void Solver::precomputeLocalMatrices() {
   
   // Create nodal representation of the reference bases
@@ -113,7 +104,7 @@ void Solver::precomputeLocalMatrices() {
 		coeffsPhi.data(), dofs, 0.0, &dPhiQ(0,0,0,l), sizeQ);
   }
   
-  // Store weights*phiQ in polyQuad to avoid recomputing 4 times
+  // Store weights*phiQ in polyQuad to avoid recomputing every time
   for (int ipy = 0; ipy <= order; ++ipy) {
     for (int ipx = 0; ipx <= order; ++ipx) {
       for (int iQ = 0; iQ < sizeQ; ++iQ) {
@@ -122,20 +113,64 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  // Initialize mass matrix = integrate(phi_i*phi_j)
-  // assumes all elements are the same size...
+  // Initialize mass matrices = integrate(ps*phi_i*phi_j)
+  Mel.realloc(dofs,dofs,2,mesh.nElements);
+  Mipiv.realloc(dofs,2,mesh.nElements);
+  darray localJPI{sizeQ, order+1,order+1};
+  darray rhoQ{sizeQ, mesh.nElements};
+  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+	      sizeQ, mesh.nElements, dofs, 1.0, InterpV.data(), sizeQ,
+	      p.rho.data(), dofs, 0.0, rhoQ.data(), sizeQ);
+  
+  for (int k = 0; k < mesh.nElements; ++k) {
+    
+    // Compute Jacobian = det(Jacobian(Tk))
+    double Jacobian = 1.0;
+    for (int l = 0; l < Mesh::DIM; ++l) {
+      Jacobian *= mesh.tempMapping(0,l,k);
+    }
+      
+    for (int s = 0; s < 2; ++s) {
+      
+      // Compute localJPI = J*P*phiQ
+      if (s == 0) {
+	// P == I
+	for (int ipy = 0; ipy <= order; ++ipy) {
+	  for (int ipx = 0; ipx <= order; ++ipx) {
+	    for (int iQ = 0; iQ < sizeQ; ++iQ) {
+	      localJPI(iQ, ipx,ipy) = Jacobian*phiQ(iQ, ipx,ipy);
+	    }
+	  }
+	}
+      }
+      else {
+	// P == rho*I
+	for (int ipy = 0; ipy <= order; ++ipy) {
+	  for (int ipx = 0; ipx <= order; ++ipx) {
+	    for (int iQ = 0; iQ < sizeQ; ++iQ) {
+	      localJPI(iQ, ipx,ipy) = Jacobian*rhoQ(iQ)*phiQ(iQ, ipx,ipy);
+	    }
+	  }
+	}
+      }
+      
+      // Mel = Interp'*W*Jk*Ps*Interp
+      cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
+		  dofs, dofs, sizeQ, Jacobian, polyQuad.data(), sizeQ, 
+		  localJPI.data(), sizeQ, 0.0, &Mel(0,0,s,k), dofs);
+      
+      // Mel overwritten with U*D*U'
+      LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'U', dofs,
+		     &Mel(0,0,s,k), dofs, &Mipiv(0,s,k));
+    }
+  }
+  
+  // TODO: everything below here
   darray alpha{Mesh::DIM};
   alpha(0) = mesh.minDX/2.0;
   alpha(1) = mesh.minDY/2.0;
   double Jacobian = alpha(0)*alpha(1);
-  Mel.realloc(dofs,dofs);
-  cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-	      dofs, dofs, sizeQ, Jacobian, polyQuad.data(), sizeQ, 
-	      phiQ.data(), sizeQ, 0.0, Mel.data(), dofs);
-  Mipiv.realloc(dofs);
-  // Mel overwritten with U*D*U'
-  LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'U', dofs,
-		 Mel.data(), dofs, Mipiv.data());
+  
   
   // Initialize stiffness matrices = integrate(dx_l(phi_i)*phi_j)
   Sels.realloc(dofs,dofs,Mesh::DIM);
@@ -180,37 +215,55 @@ void Solver::initMaterialProps() {
   darray origins{Mesh::DIM};
   bool fileExists = readProps(vp, vs, rhoIn, origins, deltas);
   
-  lambda.realloc(dofs, mesh.nElements);
-  mu.realloc(dofs, mesh.nElements);
-  rho.realloc(dofs, mesh.nElements);
+  p.lambda.realloc(dofs, mesh.nElements);
+  p.mu.realloc(dofs, mesh.nElements);
+  p.rho.realloc(dofs, mesh.nElements);
 
   if (!fileExists) {
-    // Use reasonable constants
-    double vpConst = 2000.0;
-    double vsConst = 800.0;
-    double rhoConst = 1.0;
-    lambda = rhoConst*(vpConst*vpConst - 2*vsConst*vsConst);
-    mu = rhoConst*(vsConst*vsConst);
-    rho = rhoConst;
+    p.lambda = p.rhoConst*(p.vpConst*p.vpConst - 2*p.vsConst*p.vsConst);
+    p.mu = p.rhoConst*(p.vsConst*p.vsConst);
+    p.rho = p.rhoConst;
   }
   else {
     // Interpolate data from grid onto nodes
     for (int k = 0; k < mesh.nElements; ++k) {
       for (int iN = 0; iN < dofs; ++iN) {
 	darray coord{&mesh.globalCoords(0,iN,k), Mesh::DIM};
-	double vpConst = gridInterp(coord, vp, origins, deltas);
-	double vsConst = gridInterp(coord, vs, origins, deltas);
-	double rhoConst = gridInterp(coord, rhoIn, origins, deltas);
+	double vpi = gridInterp(coord, vp, origins, deltas);
+	double vsi = gridInterp(coord, vs, origins, deltas);
+	double rhoi = gridInterp(coord, rhoIn, origins, deltas);
 	
 	// Isotropic elastic media formula
-	lambda(iN,k) = rhoConst*(vpConst*vpConst - 2*vsConst*vsConst);
-	mu(iN,k) = rhoConst*(vsConst*vsConst);
-	rho(iN,k) = rhoConst;
+	p.lambda(iN,k) = rhoi*(vpi*vpi - 2*vsi*vsi);
+	p.mu(iN,k) = rhoi*(vsi*vsi);
+	p.rho(iN,k) = rhoi;
 	
       }
     }
   }
   
+}
+
+/* Initialize time stepping information using CFL condition */
+void Solver::initTimeStepping(double dtSnap) {
+
+  // Compute maxvel = max(vp) throughout domain
+  double maxVel = 0.0;
+  for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iN = 0; iN < dofs; ++iN) {
+      double vpi = std::sqrt((p.lambda(iN,k) + 2*p.mu(iN,k))/p.rho(iN,k));
+      if (vpi > maxVel)
+	maxVel = vpi;
+    }
+  }
+  
+  // Choose dt based on CFL condition
+  dt = 0.1*std::min(mesh.minDX, mesh.minDY)/(maxVel*(std::max(1, order*order)));
+  // Ensure we will exactly end at tf
+  timesteps = std::ceil(tf/dt);
+  dt = tf/timesteps;
+  // Compute number of time steps per dtSnap sec
+  stepsPerSnap = std::ceil(dtSnap/dt);
   
 }
 
@@ -241,10 +294,8 @@ void Solver::initialCondition() {
   
 }
 
-/** Computes the true convection solution at time t for the convection problem */
+/** Computes the true solution at time t in uTrue */
 void Solver::trueSolution(darray& uTrue, double t) const {
-  
-  int N = 2;
   
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int iy = 0; iy < order+1; ++iy) {
@@ -253,29 +304,25 @@ void Solver::trueSolution(darray& uTrue, double t) const {
 	
 	double x = mesh.globalCoords(0,vID,k);
 	double y = mesh.globalCoords(1,vID,k);
-	// True solution = initial solution u0(x-a*t)
+	// True solution = convection u0(x-a*t)
 	/*
 	  uTrue(vID, iS, k) = std::sin(2*fmod(x-p.a[0]*t+5.0,1.0)*M_PI)
 	  *std::sin(2*fmod(y-p.a[1]*t+5.0,1.0)*M_PI)
 	  *std::sin(2*fmod(z-p.a[2]*t+5.0,1.0)*M_PI);
 	  */
 	
-	// TODO: True solution = conv-diff
-	uTrue(vID, 0, k) = -std::sin(x-p.a[0]*t)*std::exp(-p.eps*t);
+	// True solution = conv-diff
+	/*uTrue(vID, 0, k) = -std::sin(x-p.a[0]*t)*std::exp(-p.eps*t);
 	uTrue(vID, 1, k) = -std::sin(y-p.a[1]*t)*std::exp(-p.eps*t);
-	
-	/* // True solution = initial solution u0(x-a*t)
-	   uTrue(vID, 0, k) = std::exp(-100*std::pow(std::fmod(x-t,1.0)-.5, 2.0));
-	   uTrue(vID, 1, k) = std::exp(-100*std::pow(std::fmod(y-t,1.0)-.5, 2.0));
-	   uTrue(vID, 2, k) = std::exp(-100*std::pow(std::fmod(z-t,1.0)-.5, 2.0));
 	*/
+	
       }
     }
   }
 }
 
 /**
-   Actually time step Local DG method according to RK4, 
+   Actually time step DG method according to RK4, 
    updating the solution u every time step
 */
 void Solver::dgTimeStep() {
@@ -520,7 +567,7 @@ void Solver::interpolate(const darray& curr, darray& toInterpF, darray& toInterp
   // Volume interpolation toInterpV = InterpV*curr
   int nQV = InterpV.size(0);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      nQV, nStates*mesh.nElements*dim, dofs, 1.0, InterpV.data(), dofs,
+	      nQV, nStates*mesh.nElements*dim, dofs, 1.0, InterpV.data(), nQV,
 	      curr.data(), dofs, 0.0, toInterpV.data(), nQV);
   
   // TODO: move after all interior elements have been computed on
@@ -587,7 +634,7 @@ void Solver::localDGFlux(const darray& uInterpF, darray& residuals) const {
 }
 
 /**
-   Convect DG Flux: Computes Fc(u) for use in the Local DG formulation of the 
+   Convect DG Flux: Computes Fc(u) for use in the DG formulation of the 
    1st-order convection term.
    Uses upwinding for the numerical flux. 
    Updates residual variable with added flux.
@@ -996,12 +1043,14 @@ double Solver::computeKE(const darray& uInterpV) const {
 
 /** Evaluates the actual convection flux function for the PDE */
 void Solver::fluxC(const darray& uK, darray& fluxes) const {
-  
+
+  /*
   // Convection-diffusion along each dimension
   fluxes.fill(0.0);
   for (int l = 0; l < Mesh::DIM; ++l) {
     fluxes(l,l) = p.a[l]*uK(l);
   }
+  */
   
   /*
   // Fi2d for Navier-Stokes
@@ -1034,12 +1083,14 @@ void Solver::fluxC(const darray& uK, darray& fluxes) const {
 
 /** Evaluates the actual viscosity flux function for the PDE */
 void Solver::fluxV(const darray& uK, const darray& DuK, darray& fluxes) const {
-  
+
+  /*
   // Convection-diffusion along each dimension
   fluxes.fill(0.0);
   for (int l = 0; l < Mesh::DIM; ++l) {
     fluxes(l,l) = p.eps*DuK(l,l);
   }
+  */
 
   /*
   // Fv2d for Navier-Stokes

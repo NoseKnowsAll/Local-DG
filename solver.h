@@ -43,15 +43,23 @@ private:
   
   darray u;
   
-  darray lambda;
-  darray mu;
-  darray rho;
+  // For Elastic
+  typedef struct {
+    // Use reasonable constants when no input file
+    const double vpConst = 2000.0;
+    const double vsConst = 800.0;
+    const double rhoConst = 1.0;
+    darray lambda; // Lame's first parameter
+    darray mu;     // Lame's second parameter
+    darray rho;    // density
+    darray source; // forcing term
+  } physics;
   
-  // For convection-diffusion 
+  /* // For convection-diffusion 
   typedef struct {
     const double a[Mesh::DIM] = {1,2};
     const double eps = 1e-2;
-  } physics;
+  } physics; */
 
   /* // For Navier-Stokes
   typedef struct {
@@ -75,6 +83,7 @@ private:
   void precomputeLocalMatrices();
   void precomputeInterpMatrices();
   
+  void initTimeStepping(double dtSnap);
   void initMaterialProps();
   void initialCondition();
   void trueSolution(darray& uTrue, double t) const;

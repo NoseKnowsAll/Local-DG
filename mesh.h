@@ -159,6 +159,12 @@ public:
      normals(:,i,k) = outward normal vector of face i
   */
   darray normals;
+  /**
+     temporary mapping Tk at each element:
+     For every element k, dimension l
+     x_l = tempMapping(0,l,k)*xi_l + tempMapping(1,l,k)
+  */
+  darray tempMapping;
   
   /**
      element-face-to-node map:

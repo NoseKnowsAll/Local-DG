@@ -76,6 +76,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   eToE{},
   eToF{},
   normals{},
+  tempMapping{},
   efToN{},
   efToQ{}
 {
@@ -303,6 +304,19 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
     }
   }
   
+  // Temporary bad mapping, 0 == scaling factor, 1 == translation
+  tempMapping.realloc(2, DIM, nElements);
+  for (int k = 0; k < nElements; ++k) {
+    for (int l = 0; l < DIM; ++l) {
+      double x0 = vertices(l, eToV(0,k));
+      double x1 = vertices(l, eToV(N_VERTICES-1,k));
+      double dx = x1 - x0;
+      
+      tempMapping(0, l, k) = dx/2.0;
+      tempMapping(1, l, k) = x0+dx/2.0;
+    }
+  }
+  
 }
 
 /** Copy constructor */
@@ -332,6 +346,7 @@ Mesh::Mesh(const Mesh& other) :
   eToE{other.eToE},
   eToF{other.eToF},
   normals{other.normals},
+  tempMapping{other.tempMapping},
   efToN{other.efToN},
   efToQ{other.efToQ}
 { }
@@ -346,14 +361,9 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   // Scales and translates Chebyshev nodes into each element
   globalCoords.realloc(DIM, nNodes, nElements);
   for (int k = 0; k < nElements; ++k) {
-    darray botLeft{&vertices(0, eToV(0, k)), DIM};
-    darray topRight{&vertices(0, eToV(N_VERTICES-1, k)), DIM};
-    
     for (int iN = 0; iN < nNodes; ++iN) {
       for (int l = 0; l < DIM; ++l) {
-	// amount in [0,1] to scale lth dimension
-	double scale = .5*(refNodes(l,iN)+1.0);
-	globalCoords(l,iN,k) = botLeft(l)+scale*(topRight(l)-botLeft(l));
+	globalCoords(l,iN,k) = tempMapping(0,l,k)*refNodes(l,iN)+tempMapping(1,l,k);
       }
     }
   }
