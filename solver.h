@@ -34,7 +34,7 @@ private:
   int nStates;
   darray Mel;
   iarray Mipiv;
-  darray Sels;
+  iarray sToS;
   darray Kels;
   darray KelsF;
   
@@ -49,6 +49,7 @@ private:
     const double vpConst = 2000.0;
     const double vsConst = 800.0;
     const double rhoConst = 1.0;
+    double C; // TODO: max velocity
     darray lambda; // Lame's first parameter
     darray mu;     // Lame's second parameter
     darray rho;    // density
@@ -90,36 +91,21 @@ private:
   
   void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
   void rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
-	      darray& Dus, darray& DuInterp2D, darray& DuInterp3D, 
 	      darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, darray& ks, int istage) const;
   
   void interpolate(const darray& curr, darray& toInterp2D, darray& toInterp3D,
 		   darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const;
   
-  void localDGFlux(const darray& uInterp2D, darray& residuals) const;
-  
   void convectDGFlux(const darray& uInterp2D, darray& residual) const;
   void convectDGVolume(const darray& uInterp3D, darray& residual) const;
   
-  void viscousDGFlux(const darray& uInterp2D, const darray& DuInterp2D, darray& residual) const;
-  void viscousDGVolume(const darray& uInterp3D, const darray& DuInterp3D, darray& residual) const;
-  
-  
-  inline double numericalFluxL(double uK, double uN, double normalK) const;
   void numericalFluxC(const darray& uN, const darray& uK, 
-		      const darray& normalK, darray& fluxes) const;
-  void numericalFluxV(const darray& uN, const darray& uK, 
-		      const darray& DuN, const darray& DuK, 
 		      const darray& normalK, darray& fluxes) const;
   
   inline void fluxC(const darray& uK, darray& fluxes) const;
-  inline void fluxV(const darray& uK, const darray& DuK, darray& fluxes) const;
-  
   
   void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
   void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;
-  
-  double computeKE(const darray& uInterp3D) const;
   
 public:
   Solver();
