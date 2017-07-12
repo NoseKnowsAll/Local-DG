@@ -35,6 +35,9 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
   
+  // Compute interpolation matrices
+  precomputeInterpMatrices(); // sets nQV, xQV
+  
   // Initialize u and p
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
   // upper diagonal of E in Voigt notation, followed by v
@@ -43,9 +46,6 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   initMaterialProps(); // sets mu, lambda, rho
   initialCondition(); // sets u
   initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
-  
-  // Compute interpolation matrices
-  precomputeInterpMatrices(); // sets nQV
   
   // Compute local matrices
   precomputeLocalMatrices();
@@ -226,9 +226,9 @@ void Solver::initMaterialProps() {
   darray origins{Mesh::DIM};
   bool fileExists = readProps(vp, vs, rhoIn, origins, deltas);
   
-  p.lambda.realloc(nQV, mesh.nElements);
-  p.mu.realloc(nQV, mesh.nElements);
-  p.rho.realloc(nQV, mesh.nElements);
+  p.lambda.realloc(nQV, mesh.nElements+mesh.nGElements);
+  p.mu.realloc(nQV, mesh.nElements+mesh.nGElements);
+  p.rho.realloc(nQV, mesh.nElements+mesh.nGElements);
   
   if (!fileExists) {
     // Initialize material properties to constants
@@ -262,6 +262,9 @@ void Solver::initMaterialProps() {
     }
   }
   
+  // Send material information on MPI boundaries to neighbors
+  mpiSendMaterials();
+  
 }
 
 /* Initialize time stepping information using CFL condition */
@@ -280,10 +283,10 @@ void Solver::initTimeStepping(double dtSnap) {
   // Choose dt based on CFL condition
   dt = 0.1*std::min(mesh.minDX, mesh.minDY)/(p.C*(std::max(1, order*order)));
   // Ensure we will exactly end at tf
-  timesteps = std::ceil(tf/dt);
+  timesteps = static_cast<dgSize>(std::ceil(tf/dt));
   dt = tf/timesteps;
   // Compute number of time steps per dtSnap sec
-  stepsPerSnap = std::ceil(dtSnap/dt);
+  stepsPerSnap = static_cast<dgSize>(std::ceil(dtSnap/dt));
   
 }
 
@@ -292,23 +295,25 @@ void Solver::initialCondition() {
   
   // Sin function allowing for periodic initial condition
   for (int k = 0; k < mesh.nElements; ++k) {
-    for (int iy = 0; iy < order+1; ++iy) {
-      for (int ix = 0; ix < order+1; ++ix) {
-	int vID = ix + iy*(order+1);
-	
-	double x = mesh.globalCoords(0,vID,k);
-	double y = mesh.globalCoords(1,vID,k);
-	
-	//u(vID, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
-	u(vID, 0, k) = -std::sin(x);
-	u(vID, 1, k) = -std::sin(y);
-	/*
-	  u(vID, 0, k) = std::exp(-100*std::pow(x-.5, 2.0));
-	  u(vID, 1, k) = std::exp(-100*std::pow(y-.5, 2.0));
-	  u(vID, 2, k) = std::exp(-100*std::pow(z-.5, 2.0));
-	*/
-	
-      }
+    for (int iN = 0; iN < dofs; ++iN) {
+      
+      double x = mesh.globalCoords(0,iN,k);
+      double y = mesh.globalCoords(1,iN,k);
+      
+      u(iN, 0, k) = 0.0;//-std::sin(x);
+      u(iN, 1, k) = 0.0;//-std::sin(y);
+      u(iN, 2, k) = 0.0;// std::sin(x)*std::sin(y);
+      u(iN, 3, k) = 0.0;
+      u(iN, 4, k) = 0.0;
+      
+      //u(iN, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
+      
+      /*
+      u(iN, 0, k) = std::exp(-100*std::pow(x-.5, 2.0));
+      u(iN, 1, k) = std::exp(-100*std::pow(y-.5, 2.0));
+      u(iN, 2, k) = std::exp(-100*std::pow(z-.5, 2.0));
+      */
+      
     }
   }
   
@@ -318,25 +323,23 @@ void Solver::initialCondition() {
 void Solver::trueSolution(darray& uTrue, double t) const {
   
   for (int k = 0; k < mesh.nElements; ++k) {
-    for (int iy = 0; iy < order+1; ++iy) {
-      for (int ix = 0; ix < order+1; ++ix) {
-	int vID = ix + iy*(order+1);
-	
-	double x = mesh.globalCoords(0,vID,k);
-	double y = mesh.globalCoords(1,vID,k);
-	// True solution = convection u0(x-a*t)
-	/*
-	  uTrue(vID, iS, k) = std::sin(2*fmod(x-p.a[0]*t+5.0,1.0)*M_PI)
-	  *std::sin(2*fmod(y-p.a[1]*t+5.0,1.0)*M_PI)
-	  *std::sin(2*fmod(z-p.a[2]*t+5.0,1.0)*M_PI);
-	  */
-	
-	// True solution = conv-diff
-	/*uTrue(vID, 0, k) = -std::sin(x-p.a[0]*t)*std::exp(-p.eps*t);
-	uTrue(vID, 1, k) = -std::sin(y-p.a[1]*t)*std::exp(-p.eps*t);
-	*/
-	
-      }
+    for (int iN = 0; iN < dofs; ++iN) {
+      
+      double x = mesh.globalCoords(0,iN,k);
+      double y = mesh.globalCoords(1,iN,k);
+      // True solution = convection u0(x-a*t)
+      /*
+      uTrue(iN, iS, k) = std::sin(2*fmod(x-p.a[0]*t+5.0,1.0)*M_PI)
+        *std::sin(2*fmod(y-p.a[1]*t+5.0,1.0)*M_PI)
+	*std::sin(2*fmod(z-p.a[2]*t+5.0,1.0)*M_PI);
+      */
+      
+      // True solution = conv-diff
+      /*
+      uTrue(iN, 0, k) = -std::sin(x-p.a[0]*t)*std::exp(-p.eps*t);
+      uTrue(iN, 1, k) = -std::sin(y-p.a[1]*t)*std::exp(-p.eps*t);
+      */
+      
     }
   }
 }
@@ -450,7 +453,7 @@ void Solver::dgTimeStep() {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
 	    
-	    if (istage == nStages-1 && iK == 0 && iS == 5 && mpi.rank == mpi.ROOT) {
+	    if (istage == nStages-1 && iK == 0 && iS == 4 && mpi.rank == mpi.ROOT) {
 	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
 	    }
 	  }
@@ -522,7 +525,8 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterpF, darray& uInterpV,
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int s = 0; s < nStates; ++s) {
       LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, 1,
-		     &Mel(0,0,s,k), dofs, &Mipiv(0,s,k), &residual(0,s,k), dofs);
+		     &Mel(0,0,sToS(s),k), dofs, &Mipiv(0,sToS(s),k),
+		     &residual(0,s,k), dofs);
     }
   }
   
@@ -702,8 +706,8 @@ void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, d
 	int iK = mesh.mpibeToE(bK, iF);
 	
 	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iQ = 0; iQ < nQF; ++iQ) {
-	    toSend(iQ, iS, bK, l, iF) = interpolated(iQ, iS, mpi.faceMap(iF), iK, l);
+	  for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	    toSend(iFQ, iS, bK, l, iF) = interpolated(iFQ, iS, mpi.faceMap(iF), iK, l);
 	  }
 	}
       }
@@ -750,8 +754,8 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
 	
 	
 	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iQ = 0; iQ < nQF; ++iQ) {
-	    interpolated(iQ, iS, nF, nK, l) = toRecv(iQ, iS, bK, l, iF);
+	  for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	    interpolated(iFQ, iS, nF, nK, l) = toRecv(iFQ, iS, bK, l, iF);
 	  }
 	}
       }
@@ -763,7 +767,67 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
 
 
 
-
+/**
+   MPI communication: Resolves material properties so that all tasks also get 
+   their neighbor's material properties on the quadrature points of boundary.
+   Note that this is not the same as getting the boundary quadrature points,
+   but material properties are linearly interpolated to begin with...
+   Good enough and saves a lot of memory.
+*/
+void Solver::mpiSendMaterials() {
+  
+  int nmaterials = 3;
+  int nQF = mesh.nFQNodes;
+  int nBElems = max(mesh.mpiNBElems);
+  darray toSend{nmaterials, nQF, nBElems, MPIUtil::N_FACES};
+  darray toRecv{nmaterials, nQF, nBElems, MPIUtil::N_FACES};
+  // Requests for MPI: 2*face == send, 2*face+1 == recv
+  MPI_Request reqs[2*MPIUtil::N_FACES];
+  
+  // Pack data to send
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
+      int iK = mesh.mpibeToE(bK, iF);
+      
+      for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	toSend(0, iFQ, bK, iF) = p.lambda(mesh.efToQ(iFQ, mpi.faceMap(iF)), iK);
+	toSend(1, iFQ, bK, iF) = p.mu(    mesh.efToQ(iFQ, mpi.faceMap(iF)), iK);
+	toSend(2, iFQ, bK, iF) = p.rho(   mesh.efToQ(iFQ, mpi.faceMap(iF)), iK);
+      }
+    }
+  }
+  
+  // Actually send/recv the data
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    
+    MPI_Isend(&toSend(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
+	      MPI_DOUBLE, mpi.neighbors(iF), iF,
+	      mpi.cartComm, &reqs[2*iF]);
+    
+    MPI_Irecv(&toRecv(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
+	      MPI_DOUBLE, mpi.neighbors(iF), mpi.tags(iF),
+	      mpi.cartComm, &reqs[2*iF+1]);
+  }
+  
+  // Finalize sends/recv
+  MPI_Waitall(2*MPIUtil::N_FACES, reqs, MPI_STATUSES_IGNORE);
+  
+  // Unpack data
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
+      auto iK = mesh.mpibeToE(bK, iF);
+      auto nF = mesh.eToF(mpi.faceMap(iF), iK);
+      auto nK = mesh.eToE(mpi.faceMap(iF), iK);
+      
+      for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	p.lambda(mesh.efToQ(iFQ,nF),nK) = toRecv(0, iFQ, bK, iF);
+	p.mu(mesh.efToQ(iFQ,nF),nK)     = toRecv(1, iFQ, bK, iF);
+	p.rho(mesh.efToQ(iFQ,nF),nK)    = toRecv(2, iFQ, bK, iF);
+      }
+    }
+  }
+  
+}
 
 //////////////////////////////////////////////////////////////////////////////////
 

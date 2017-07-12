@@ -26,7 +26,7 @@ private:
   double tf;
   double dt;
   dgSize timesteps;
-  int stepsPerSnap;
+  dgSize stepsPerSnap;
   
   int order;
   int dofs;
@@ -110,6 +110,7 @@ private:
   
   void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
   void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;
+  void mpiSendMaterials();
   
 public:
   Solver();

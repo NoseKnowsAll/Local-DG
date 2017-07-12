@@ -1,6 +1,6 @@
-CC = mpic++
-#mpiicpc
-DEBUG := 
+CC = mpiicpc
+#mpic++
+DEBUG := TRUE
 
 
 
@@ -31,8 +31,8 @@ else
 endif
 
 
-HEADERS = solver.h mesh.h dgMath.h io.h MPIUtil.h array.h
-OBJS    = driver.o solver.o mesh.o dgMath.o io.o MPIUtil.o
+HEADERS = solver.h mesh.h dgMath.h io.h MPIUtil.h source.h array.h
+OBJS    = driver.o solver.o mesh.o dgMath.o io.o MPIUtil.o source.o
 
 TARGETS = driver
 
