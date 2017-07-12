@@ -30,7 +30,9 @@ private:
   
   int order;
   int dofs;
+  int nQV;
   darray refNodes;
+  darray xQV;
   int nStates;
   darray Mel;
   iarray Mipiv;
@@ -100,9 +102,11 @@ private:
   void convectDGVolume(const darray& uInterp3D, darray& residual) const;
   
   void numericalFluxC(const darray& uN, const darray& uK, 
-		      const darray& normalK, darray& fluxes) const;
+		      const darray& normalK, darray& fluxes,
+		      double lambdaN, double muN, double rhoN, 
+		      double lambdaK, double muK, double rhoK) const;
   
-  inline void fluxC(const darray& uK, darray& fluxes) const;
+  inline void fluxC(const darray& uK, darray& fluxes, double lambda, double mu) const;
   
   void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
   void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;

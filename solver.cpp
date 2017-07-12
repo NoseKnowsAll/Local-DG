@@ -13,7 +13,9 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   stepsPerSnap{},
   order{_p},
   dofs{},
+  nQV{},
   refNodes{},
+  xQV{},
   nStates{},
   Mel{},
   Mipiv{},
@@ -32,7 +34,7 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   mesh.setupNodes(refNodes, order);
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
-
+  
   // Initialize u and p
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
   // upper diagonal of E in Voigt notation, followed by v
@@ -43,10 +45,15 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
   
   // Compute interpolation matrices
-  precomputeInterpMatrices();
+  precomputeInterpMatrices(); // sets nQV
   
   // Compute local matrices
   precomputeLocalMatrices();
+  
+  if (mpi.rank == mpi.ROOT) {
+    std::cout << "dt = " << dt << std::endl;
+    std::cout << "maxvel = " << p.C << std::endl;
+  }
   
 }
 
@@ -64,8 +71,8 @@ void Solver::precomputeInterpMatrices() {
   // 2D interpolation matrix for use on elements
   darray chebyV;
   chebyshev2D(order, chebyV);
-  darray xQV, wQV;
-  gaussQuad2D(2*order, xQV, wQV);
+  darray wQV;
+  nQV = gaussQuad2D(2*order, xQV, wQV);
   
   interpolationMatrix2D(chebyV, xQV, InterpV);
   
@@ -90,26 +97,26 @@ void Solver::precomputeLocalMatrices() {
   
   // Compute reference bases on the quadrature points
   darray xQ, wQ;
-  int sizeQ = gaussQuad2D(2*order, xQ, wQ);
+  gaussQuad2D(2*order, xQ, wQ);
   darray polyQuad, dPolyQuad;
   legendre2D(order, xQ, polyQuad);
   dlegendre2D(order, xQ, dPolyQuad);
   
-  darray phiQ{sizeQ,order+1,order+1};
+  darray phiQ{nQV,order+1,order+1};
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-	      sizeQ, dofs, dofs, 1.0, polyQuad.data(), sizeQ, 
-	      coeffsPhi.data(), dofs, 0.0, phiQ.data(), sizeQ);
-  darray dPhiQ{sizeQ,order+1,order+1,Mesh::DIM};
+	      nQV, dofs, dofs, 1.0, polyQuad.data(), nQV, 
+	      coeffsPhi.data(), dofs, 0.0, phiQ.data(), nQV);
+  darray dPhiQ{nQV,order+1,order+1,Mesh::DIM};
   for (int l = 0; l < Mesh::DIM; ++l) {
     cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-		sizeQ, dofs, dofs, 1.0, &dPolyQuad(0,0,0,l), sizeQ, 
-		coeffsPhi.data(), dofs, 0.0, &dPhiQ(0,0,0,l), sizeQ);
+		nQV, dofs, dofs, 1.0, &dPolyQuad(0,0,0,l), nQV, 
+		coeffsPhi.data(), dofs, 0.0, &dPhiQ(0,0,0,l), nQV);
   }
   
   // Store weights*phiQ in polyQuad to avoid recomputing every time
   for (int ipy = 0; ipy <= order; ++ipy) {
     for (int ipx = 0; ipx <= order; ++ipx) {
-      for (int iQ = 0; iQ < sizeQ; ++iQ) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
 	polyQuad(iQ, ipx,ipy) = phiQ(iQ, ipx,ipy)*wQ(iQ);
       }
     }
@@ -118,11 +125,11 @@ void Solver::precomputeLocalMatrices() {
   // Initialize mass matrices = integrate(ps*phi_i*phi_j)
   Mel.realloc(dofs,dofs,2,mesh.nElements);
   Mipiv.realloc(dofs,2,mesh.nElements);
-  darray localJPI{sizeQ, order+1,order+1};
-  darray rhoQ{sizeQ, mesh.nElements};
+  darray localJPI{nQV, order+1,order+1};
+  darray rhoQ{nQV, mesh.nElements};
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-	      sizeQ, mesh.nElements, dofs, 1.0, InterpV.data(), sizeQ,
-	      p.rho.data(), dofs, 0.0, rhoQ.data(), sizeQ);
+	      nQV, mesh.nElements, dofs, 1.0, InterpV.data(), nQV,
+	      p.rho.data(), dofs, 0.0, rhoQ.data(), nQV);
   
   for (int k = 0; k < mesh.nElements; ++k) {
     
@@ -139,7 +146,7 @@ void Solver::precomputeLocalMatrices() {
 	// P == I
 	for (int ipy = 0; ipy <= order; ++ipy) {
 	  for (int ipx = 0; ipx <= order; ++ipx) {
-	    for (int iQ = 0; iQ < sizeQ; ++iQ) {
+	    for (int iQ = 0; iQ < nQV; ++iQ) {
 	      localJPI(iQ, ipx,ipy) = Jacobian*phiQ(iQ, ipx,ipy);
 	    }
 	  }
@@ -149,7 +156,7 @@ void Solver::precomputeLocalMatrices() {
 	// P == rho*I
 	for (int ipy = 0; ipy <= order; ++ipy) {
 	  for (int ipx = 0; ipx <= order; ++ipx) {
-	    for (int iQ = 0; iQ < sizeQ; ++iQ) {
+	    for (int iQ = 0; iQ < nQV; ++iQ) {
 	      localJPI(iQ, ipx,ipy) = Jacobian*rhoQ(iQ)*phiQ(iQ, ipx,ipy);
 	    }
 	  }
@@ -158,8 +165,8 @@ void Solver::precomputeLocalMatrices() {
       
       // Mel = Interp'*W*Jk*Ps*Interp
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-		  dofs, dofs, sizeQ, Jacobian, polyQuad.data(), sizeQ, 
-		  localJPI.data(), sizeQ, 0.0, &Mel(0,0,s,k), dofs);
+		  dofs, dofs, nQV, Jacobian, polyQuad.data(), nQV, 
+		  localJPI.data(), nQV, 0.0, &Mel(0,0,s,k), dofs);
       
       // Mel overwritten with U*D*U'
       LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'U', dofs,
@@ -178,18 +185,18 @@ void Solver::precomputeLocalMatrices() {
     sToS(s) = 1;
   }
   
-  // TODO: everything below here
+  // TODO: everything below here needs to work with new mappings
   darray alpha{Mesh::DIM};
   alpha(0) = mesh.minDX/2.0;
   alpha(1) = mesh.minDY/2.0;
   double Jacobian = alpha(0)*alpha(1);
   
   // Initialize K matrices = dx_l(phi_i)*weights
-  Kels.realloc(sizeQ,dofs,Mesh::DIM);
+  Kels.realloc(nQV,dofs,Mesh::DIM);
   for (int l = 0; l < Mesh::DIM; ++l) {
     double scaleL = Jacobian/alpha(l);
     for (int iDofs = 0; iDofs < dofs; ++iDofs) {
-      for (int iQ = 0; iQ < sizeQ; ++iQ) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
 	Kels(iQ, iDofs, l) = dPhiQ(iQ, iDofs,0, l)*wQ(iQ)*scaleL;
       }
     }
@@ -213,33 +220,43 @@ void Solver::precomputeLocalMatrices() {
 
 /** Initializes lambda, mu arrays according to file info */
 void Solver::initMaterialProps() {
+  
   darray vp, vs, rhoIn;
   darray deltas{Mesh::DIM};
   darray origins{Mesh::DIM};
   bool fileExists = readProps(vp, vs, rhoIn, origins, deltas);
   
-  p.lambda.realloc(dofs, mesh.nElements);
-  p.mu.realloc(dofs, mesh.nElements);
-  p.rho.realloc(dofs, mesh.nElements);
-
+  p.lambda.realloc(nQV, mesh.nElements);
+  p.mu.realloc(nQV, mesh.nElements);
+  p.rho.realloc(nQV, mesh.nElements);
+  
   if (!fileExists) {
-    p.lambda = p.rhoConst*(p.vpConst*p.vpConst - 2*p.vsConst*p.vsConst);
-    p.mu = p.rhoConst*(p.vsConst*p.vsConst);
-    p.rho = p.rhoConst;
+    // Initialize material properties to constants
+    for (int k = 0; k < mesh.nElements; ++k) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	p.lambda(iQ,k) = p.rhoConst*(p.vpConst*p.vpConst - 2*p.vsConst*p.vsConst);
+	p.mu(iQ,k) = p.rhoConst*(p.vsConst*p.vsConst);
+	p.rho(iQ,k) = p.rhoConst;
+      }
+    }
   }
   else {
-    // Interpolate data from grid onto nodes
+    // Interpolate data from grid onto quadrature points
     for (int k = 0; k < mesh.nElements; ++k) {
-      for (int iN = 0; iN < dofs; ++iN) {
-	darray coord{&mesh.globalCoords(0,iN,k), Mesh::DIM};
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	darray coord{Mesh::DIM};
+	for (int l = 0; l < Mesh::DIM; ++l) {
+	  coord(l) = mesh.tempMapping(0,l,k)*xQV(l,iQ)+mesh.tempMapping(1,l,k);
+	}
+	
 	double vpi = gridInterp(coord, vp, origins, deltas);
 	double vsi = gridInterp(coord, vs, origins, deltas);
 	double rhoi = gridInterp(coord, rhoIn, origins, deltas);
 	
 	// Isotropic elastic media formula
-	p.lambda(iN,k) = rhoi*(vpi*vpi - 2*vsi*vsi);
-	p.mu(iN,k) = rhoi*(vsi*vsi);
-	p.rho(iN,k) = rhoi;
+	p.lambda(iQ,k) = rhoi*(vpi*vpi - 2*vsi*vsi);
+	p.mu(iQ,k) = rhoi*(vsi*vsi);
+	p.rho(iQ,k) = rhoi;
 	
       }
     }
@@ -249,12 +266,12 @@ void Solver::initMaterialProps() {
 
 /* Initialize time stepping information using CFL condition */
 void Solver::initTimeStepping(double dtSnap) {
-
+  
   // Compute p.C = maxvel = max(vp) throughout domain
   p.C = 0.0;
   for (int k = 0; k < mesh.nElements; ++k) {
-    for (int iN = 0; iN < dofs; ++iN) {
-      double vpi = std::sqrt((p.lambda(iN,k) + 2*p.mu(iN,k))/p.rho(iN,k));
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      double vpi = std::sqrt((p.lambda(iQ,k) + 2*p.mu(iQ,k))/p.rho(iQ,k));
       if (vpi > p.C)
 	p.C = vpi;
     }
@@ -354,7 +371,7 @@ void Solver::dgTimeStep() {
   int nQF = mesh.nFQNodes;
   darray uCurr{dofs, nStates, mesh.nElements, 1};
   darray uInterpF{nQF, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, 1};
-  darray uInterpV{InterpV.size(0), nStates, mesh.nElements, 1};
+  darray uInterpV{nQV, nStates, mesh.nElements, 1};
   darray ks{dofs, nStates, mesh.nElements, nStages};
   darray uTrue{dofs, nStates, mesh.nElements, 1};
   
@@ -396,7 +413,7 @@ void Solver::dgTimeStep() {
       if (!success)
 	exit(-1);
       
-      // TODO: debugging for convection problem
+      /* TODO: debugging for convection problem
       
       double norm = 0.0;
       for (int iK = 0; iK < mesh.nElements; ++iK) {
@@ -433,9 +450,9 @@ void Solver::dgTimeStep() {
 	  for (int iN = 0; iN < dofs; ++iN) {
 	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
 	    
-	    /*if (istage == nStages-1 && iK == 0 && iS == 3 && mpi.rank == mpi.ROOT) {
+	    if (istage == nStages-1 && iK == 0 && iS == 5 && mpi.rank == mpi.ROOT) {
 	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
-	    }*/
+	    }
 	  }
 	}
       }
@@ -544,7 +561,6 @@ void Solver::interpolate(const darray& curr, darray& toInterpF, darray& toInterp
   mpiStartComm(toInterpF, dim, toSend, toRecv, rk4Reqs);
   
   // Volume interpolation toInterpV = InterpV*curr
-  int nQV = InterpV.size(0);
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
 	      nQV, nStates*mesh.nElements*dim, dofs, 1.0, InterpV.data(), nQV,
 	      curr.data(), dofs, 0.0, toInterpV.data(), nQV);
@@ -591,8 +607,17 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
 	  uK(iS) = uInterpF(iFQ, iS, iF, iK);
 	  uN(iS) = uInterpF(iFQ, iS, nF, nK);
 	}
-	// Compute fluxes = fc*(u+,u-)'*n
-	numericalFluxC(uN, uK, normalK, fluxes);
+	// Get material properties at this point
+	double lambdaK = p.lambda(mesh.efToQ(iFQ, iF), iK);
+	double lambdaN = p.lambda(mesh.efToQ(iFQ, nF), nK);
+	double muK = p.lambda(mesh.efToQ(iFQ, iF), iK);
+	double muN = p.lambda(mesh.efToQ(iFQ, nF), nK);
+	double rhoK = p.rho(mesh.efToQ(iFQ, iF), iK);
+	double rhoN = p.rho(mesh.efToQ(iFQ, nF), nK);
+	
+	// Compute fluxes = F*(u+,u-)'*n
+	numericalFluxC(uN, uK, normalK, fluxes,
+		       lambdaN, muN, rhoN, lambdaK, muK, rhoK);
 	// Copy flux data into fStar
 	for (int iS = 0; iS < nStates; ++iS) {
 	  fStar(iFQ, iS) = fluxes(iS);
@@ -621,8 +646,6 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
 /** Evaluates the volume integral term for convection in the RHS */
 void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
   
-  int nQV = InterpV.size(0);
-  
   // Contains all flux information
   darray fc{nQV, nStates, mesh.nElements, Mesh::DIM};
   
@@ -639,7 +662,7 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
 	uK(iS) = uInterpV(iQ,iS,k);
       }
       // Compute fluxes
-      fluxC(uK, fluxes);
+      fluxC(uK, fluxes, p.lambda(iQ,k), p.mu(iQ,k));
       // Copy data into fc
       for (int l = 0; l < Mesh::DIM; ++l) {
 	for (int iS = 0; iS < nStates; ++iS) {
@@ -746,14 +769,10 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
 
 
 /** Evaluates the actual convection flux function for the PDE */
-void Solver::fluxC(const darray& uK, darray& fluxes) const {
+inline void Solver::fluxC(const darray& uK, darray& fluxes, double lambda, double mu) const {
   
   // Elastic wave equation flux term
   int nstrains = Mesh::DIM*(Mesh::DIM+1)/2;
-  std::cerr << "fluxC not fully implemented..." << std::endl;
-  exit(0);
-  double lambda = 0.0; // TODO: get from arrays
-  double mu = 0.0;
   fluxes.fill(0.0);
   
   // -(vxI + Ixv)/2.0
@@ -813,24 +832,28 @@ void Solver::fluxC(const darray& uK, darray& fluxes) const {
    dotted with the normal, storing output in fluxes.
 */
 void Solver::numericalFluxC(const darray& uN, const darray& uK, 
-			    const darray& normalK, darray& fluxes) const {
+			    const darray& normalK, darray& fluxes,
+			    double lambdaN, double muN, double rhoN, 
+			    double lambdaK, double muK, double rhoK) const {
   
   // Lax-Friedrichs flux for elastic wave equation
   darray FK{nStates, Mesh::DIM};
   darray FN{nStates, Mesh::DIM};
   
-  fluxC(uK, FK);
-  fluxC(uN, FN);
-
-  // maxvel = vp
-  // TODO: reflect this current location only
-  //double C = std::sqrt(p.lambda + 2*p.mu)/p.rho);
+  fluxC(uK, FK, lambdaK, muK);
+  fluxC(uN, FN, lambdaN, muN);
+  
+  // maximum vel = vp = avg of vp at each quadrature point
+  double vpK = std::sqrt(lambdaK + 2*muK)/rhoK;
+  double vpN = std::sqrt(lambdaN + 2*muN)/rhoN;
+  double C = (vpK+vpN)/2.0;
+  //double C = std::max(vpK, vpN); // TODO: is this better?
   
   fluxes.fill(0.0);
   for (int iS = 0; iS < nStates; ++iS) {
     for (int l = 0; l < Mesh::DIM; ++l) {
-      fluxes(iS) += (FK(iS,l) + FN(iS,l))/2.0*normalK(l)
-	- p.C/2.0*(uK(iS) - uN(iS))*normalK(l)*normalK(l);
+      fluxes(iS) += (FN(iS,l) + FK(iS,l))/2.0*normalK(l)
+	- C/2.0*(uN(iS) - uK(iS))*normalK(l)*normalK(l);
       // TODO: is this negative sign correct?
     }
   }
