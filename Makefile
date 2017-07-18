@@ -31,8 +31,8 @@ else
 endif
 
 
-HEADERS = solver.h mesh.h dgMath.h io.h MPIUtil.h source.h array.h
-OBJS    = driver.o solver.o mesh.o dgMath.o io.o MPIUtil.o source.o
+HEADERS = solver.h mesh.h source.h dgMath.h io.h MPIUtil.h array.h
+OBJS    = driver.o solver.o mesh.o source.o dgMath.o io.o MPIUtil.o
 
 TARGETS = driver
 

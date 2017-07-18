@@ -12,6 +12,7 @@
 #include <cmath>
 #include <chrono>
 
+#include "source.h"
 #include "mesh.h"
 #include "MPIUtil.h"
 #include "dgMath.h"
@@ -51,11 +52,11 @@ private:
     const double vpConst = 2000.0;
     const double vsConst = 800.0;
     const double rhoConst = 1.0;
-    double C; // TODO: max velocity
+    double C;      // max velocity throughout domain
     darray lambda; // Lame's first parameter
     darray mu;     // Lame's second parameter
     darray rho;    // density
-    darray source; // forcing term
+    Source src;    // forcing term
   } physics;
   
   /* // For convection-diffusion 
@@ -79,7 +80,7 @@ private:
     double T0;      // background temperature
     double tc;      // characteristic convective time
     double R;       // ideal gas constant
-    } physics; */
+  } physics; */
   
   physics p;
   
@@ -114,7 +115,7 @@ private:
   
 public:
   Solver();
-  Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh);
+  Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, const Mesh& _mesh);
   
   void dgTimeStep();
   

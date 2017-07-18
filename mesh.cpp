@@ -375,7 +375,7 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   int nQ = (int)std::ceil(order+1/2.0);
   nFQNodes = initFaceMap(efToQ, nQ);
   mpi.initDatatype(nFQNodes);
-
+  
 }
 
 /**

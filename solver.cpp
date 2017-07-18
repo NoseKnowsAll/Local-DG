@@ -1,17 +1,17 @@
 #include "solver.h"
 
 /** Default constructor */
-Solver::Solver() : Solver{2, 10, 1.0, 1.0, Mesh{}} { }
+Solver::Solver() : Solver{2, Source::Params{}, 0.1, 1.0, Mesh{}} { }
 
 /** Main constructor */
-Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) :
+Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, const Mesh& _mesh) :
   mesh{_mesh},
   mpi{_mesh.mpi},
   tf{_tf},
   dt{},
   timesteps{},
   stepsPerSnap{},
-  order{_p},
+  order{_order},
   dofs{},
   nQV{},
   refNodes{},
@@ -38,7 +38,7 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   // Compute interpolation matrices
   precomputeInterpMatrices(); // sets nQV, xQV
   
-  // Initialize u and p
+  // Initialize u and physics
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
   // upper diagonal of E in Voigt notation, followed by v
   // u = [e11, e22, e12, v1, v2]
@@ -46,6 +46,12 @@ Solver::Solver(int _p, double dtSnap, double _tf, double _L, const Mesh& _mesh) 
   initMaterialProps(); // sets mu, lambda, rho
   initialCondition(); // sets u
   initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
+  
+  // Initialize sources
+  srcParams.timesteps = timesteps;
+  srcParams.dt = dt;
+  p.src.init(srcParams);
+  p.src.definePositions(srcParams, mesh, xQV);
   
   // Compute local matrices
   precomputeLocalMatrices();
