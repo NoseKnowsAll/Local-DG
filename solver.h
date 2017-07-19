@@ -17,6 +17,7 @@
 #include "MPIUtil.h"
 #include "dgMath.h"
 #include "io.h"
+#include "array.h"
 
 class Solver {
 private:
@@ -43,6 +44,7 @@ private:
   
   darray InterpF;
   darray InterpV;
+  darray InterpW;
   
   darray u;
   
@@ -94,10 +96,13 @@ private:
   
   void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
   void rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
-	      darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, darray& ks, int istage) const;
+	      darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, 
+	      darray& ks, int istage, int iTime) const;
   
   void interpolate(const darray& curr, darray& toInterp2D, darray& toInterp3D,
 		   darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const;
+  
+  void sourceVolume(darray& residual, int iTime) const;
   
   void convectDGFlux(const darray& uInterp2D, darray& residual) const;
   void convectDGVolume(const darray& uInterp3D, darray& residual) const;

@@ -24,6 +24,7 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   KelsF{},
   InterpF{},
   InterpV{},
+  InterpW{},
   u{},
   p{}
 {
@@ -101,17 +102,11 @@ void Solver::precomputeLocalMatrices() {
   LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, dofs, 
 		lV.data(), dofs, ipiv, coeffsPhi.data(), dofs);
   
-  // Compute reference bases on the quadrature points
+  // Compute derivative of reference bases on the quadrature points
   darray xQ, wQ;
   gaussQuad2D(2*order, xQ, wQ);
-  darray polyQuad, dPolyQuad;
-  legendre2D(order, xQ, polyQuad);
+  darray dPolyQuad;
   dlegendre2D(order, xQ, dPolyQuad);
-  
-  darray phiQ{nQV,order+1,order+1};
-  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-	      nQV, dofs, dofs, 1.0, polyQuad.data(), nQV, 
-	      coeffsPhi.data(), dofs, 0.0, phiQ.data(), nQV);
   darray dPhiQ{nQV,order+1,order+1,Mesh::DIM};
   for (int l = 0; l < Mesh::DIM; ++l) {
     cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
@@ -119,12 +114,11 @@ void Solver::precomputeLocalMatrices() {
 		coeffsPhi.data(), dofs, 0.0, &dPhiQ(0,0,0,l), nQV);
   }
   
-  // Store weights*phiQ in polyQuad to avoid recomputing every time
-  for (int ipy = 0; ipy <= order; ++ipy) {
-    for (int ipx = 0; ipx <= order; ++ipx) {
-      for (int iQ = 0; iQ < nQV; ++iQ) {
-	polyQuad(iQ, ipx,ipy) = phiQ(iQ, ipx,ipy)*wQ(iQ);
-      }
+  // Store weights*InterpV in InterpW to avoid recomputing every time
+  InterpW.realloc(nQV, dofs);
+  for (int iN = 0; iN < dofs; ++iN) {
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      InterpW(iQ, iN) = InterpV(iQ, iN)*wQ(iQ);
     }
   }
   
@@ -147,31 +141,27 @@ void Solver::precomputeLocalMatrices() {
       
     for (int s = 0; s < 2; ++s) {
       
-      // Compute localJPI = J*P*phiQ
+      // Compute localJPI = J*P*Interp
       if (s == 0) {
 	// P == I
-	for (int ipy = 0; ipy <= order; ++ipy) {
-	  for (int ipx = 0; ipx <= order; ++ipx) {
-	    for (int iQ = 0; iQ < nQV; ++iQ) {
-	      localJPI(iQ, ipx,ipy) = Jacobian*phiQ(iQ, ipx,ipy);
-	    }
+	for (int iN = 0; iN < dofs; ++iN) {
+	  for (int iQ = 0; iQ < nQV; ++iQ) {
+	    localJPI(iQ, iN) = Jacobian*InterpV(iQ, iN);
 	  }
 	}
       }
       else {
 	// P == rho*I
-	for (int ipy = 0; ipy <= order; ++ipy) {
-	  for (int ipx = 0; ipx <= order; ++ipx) {
-	    for (int iQ = 0; iQ < nQV; ++iQ) {
-	      localJPI(iQ, ipx,ipy) = Jacobian*rhoQ(iQ)*phiQ(iQ, ipx,ipy);
-	    }
+	for (int iN = 0; iN < dofs; ++iN) {
+	  for (int iQ = 0; iQ < nQV; ++iQ) {
+	    localJPI(iQ, iN) = Jacobian*rhoQ(iQ)*InterpV(iQ, iN);
 	  }
 	}
       }
       
       // Mel = Interp'*W*Jk*Ps*Interp
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-		  dofs, dofs, nQV, Jacobian, polyQuad.data(), nQV, 
+		  dofs, dofs, nQV, Jacobian, InterpW.data(), nQV, 
 		  localJPI.data(), nQV, 0.0, &Mel(0,0,s,k), dofs);
       
       // Mel overwritten with U*D*U'
@@ -400,30 +390,29 @@ void Solver::dgTimeStep() {
   auto startTime = std::chrono::high_resolution_clock::now();
   
   // Loop over time steps
-  for (int iStep = 0; iStep < timesteps; ++iStep) {
+  for (int iTime = -p.src.halfSrc; iTime < timesteps; ++iTime) {
     
-    /*if (mpi.rank == mpi.ROOT) {
-      std::cout << "time = " << iStep*dt << std::endl;
-    }*/
+    if (mpi.rank == mpi.ROOT) {
+      std::cout << "time = " << iTime*dt << std::endl;
+    }
     
-    if (iStep % stepsPerSnap == 0) {
+    if (iTime % stepsPerSnap == 0 && iTime >= 0) {
       if (mpi.rank == mpi.ROOT) {
 	auto endTime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = endTime-startTime;
-	std::cout << "Saving snapshot " << iStep/stepsPerSnap << "...\n";
+	std::cout << "Saving snapshot " << iTime/stepsPerSnap << "...\n";
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
-      trueSolution(uTrue, iStep*dt);
+      trueSolution(uTrue, iTime*dt);
       // Output snapshot files
-      bool success = initXYZVFile("output/xyzutrue.txt", Mesh::DIM, iStep/stepsPerSnap, "utrue", nStates);
+      bool success = initXYZVFile("output/xyzu.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
       if (!success)
 	exit(-1);
-      success = exportToXYZVFile("output/xyzutrue.txt", iStep/stepsPerSnap, mesh.globalCoords, uTrue);
+      success = exportToXYZVFile("output/xyzu.txt", iTime/stepsPerSnap, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
       
       /* TODO: debugging for convection problem
-      
       double norm = 0.0;
       for (int iK = 0; iK < mesh.nElements; ++iK) {
 	for (int iS = 0; iS < nStates; ++iS) {
@@ -435,7 +424,7 @@ void Solver::dgTimeStep() {
 	  }
 	}
       }
-      std::cout << "infinity norm at time " << iStep*dt << " = " << norm << std::endl;
+      std::cout << "infinity norm at time " << iTime*dt << " = " << norm << std::endl;
       // END TODO */
       
     }
@@ -448,7 +437,8 @@ void Solver::dgTimeStep() {
       
       // Updates ks(:,istage) = rhs(uCurr) based on DG method
       rk4Rhs(uCurr, uInterpF, uInterpV, 
-	     toSend, toRecv, rk4Reqs, ks, istage);
+	     toSend, toRecv, rk4Reqs, 
+	     ks, istage, iTime);
       
     }
     
@@ -509,23 +499,27 @@ void Solver::rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks,
    Updates ks(:,istage) with rhs evaluated at uCurr
 */
 void Solver::rk4Rhs(const darray& uCurr, darray& uInterpF, darray& uInterpV, 
-		    darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, darray& ks, int istage) const {
+		    darray& toSend, darray& toRecv, MPI_Request * rk4Reqs,
+		    darray& ks, int istage, int iTime) const {
   
   // Interpolate uCurr once
   interpolate(uCurr, uInterpF, uInterpV, toSend, toRecv, rk4Reqs, 1);
   
   // Now compute ks(:,istage) from uInterp according to:
-  // ks(:,istage) = Mel\( K*fc(u) - Fc(u) )
+  // ks(:,istage) = Mel\( B + K(u) - F(u) )
   
   darray residual{&ks(0,0,0,istage), dofs, nStates, mesh.nElements};
   residual.fill(0.0);
   
-  // ks(:,istage) = -Fc(u)
+  // ks(:,istage) += -F(u)
   convectDGFlux(uInterpF, residual);
   cblas_dscal(dofs*nStates*mesh.nElements, -1.0, residual.data(), 1);
   
-  // ks(:,istage) += Kc*fc(u)
+  // ks(:,istage) += K(u)
   convectDGVolume(uInterpV, residual);
+  
+  // ks(:,istage) += B
+  sourceVolume(residual, iTime);
   
   // ks(:,istage) = Mel\ks(:,istage)
   for (int k = 0; k < mesh.nElements; ++k) {
@@ -578,6 +572,58 @@ void Solver::interpolate(const darray& curr, darray& toInterpF, darray& toInterp
   // TODO: move after all interior elements have been computed on
   mpiEndComm(toInterpF, dim, toRecv, rk4Reqs);
   
+}
+
+
+/**
+   Computes right-hand-side B term for use in the DG formulation
+*/
+void Solver::sourceVolume(darray& residual, int iTime) const {
+  
+  darray localJWI{nQV, dofs};
+  darray f{nQV};
+  darray b{dofs};
+  auto waveAmp = p.src.wavelet(iTime+p.src.halfSrc);
+  
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    
+    // Compute Jacobian = det(Jacobian(Tk))
+    double Jacobian = 1.0;
+    for (int l = 0; l < Mesh::DIM; ++l) {
+      Jacobian *= mesh.tempMapping(0,l,iK);
+    }
+    
+    // Compute localJWI = J*W*Interp
+    for (int iN = 0; iN < dofs; ++iN) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	localJWI(iQ, iN) = Jacobian*InterpW(iQ, iN);
+      }
+    }
+    
+    // Compute f = rho(x)*g(x)*w(t)
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      f(iQ) = p.rho(iQ,iK)*p.src.weights(iQ,iK)*waveAmp;
+    }
+    
+    // Compute b = Interp'*W*J*f
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		dofs, 1, nQV, 1.0, localJWI.data(), nQV,
+		f.data(), nQV, 0.0, b.data(), dofs);
+    
+    // Add into global residual array
+    for (int iS = 0; iS < nStates; ++iS) {
+      if (sToS(iS) == 0) {
+	// residual += 0
+      }
+      else if (sToS(iS) == 1) {
+	// residual += b
+	for (int iN = 0; iN < dofs; ++iN) {
+	  residual(iN,iS,iK) += b(iN);
+	}
+      }
+    }
+    
+  }
 }
 
 

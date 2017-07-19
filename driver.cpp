@@ -21,18 +21,18 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing mesh..." << std::endl;
   }
   Point botLeft{0.0, 0.0, 0.0};
-  Point topRight{24300.0, 4000.0, 0.0};
-  int nx = 10;
-  Mesh mesh{nx, nx, nx, botLeft, topRight, mpi};
+  Point topRight{200.0, 100.0, 0.0};
+  int nx = 25;
+  Mesh mesh{2*nx, nx, nx, botLeft, topRight, mpi};
   
   // Initialize sources
   int nsrcs = 1;
   Source::Params srcParams;
   srcParams.srcPos.realloc(Mesh::DIM, nsrcs);
-  srcParams.srcPos(0,0) = 12150.0;
-  srcParams.srcPos(1,0) = 2000.0;
+  srcParams.srcPos(0,0) = 100.0;
+  srcParams.srcPos(1,0) = 50.0;
   srcParams.srcAmps.realloc(nsrcs);
-  srcParams.srcAmps(0) = 1.0;
+  srcParams.srcAmps(0) = 1.0e5;
   srcParams.type = Source::Wavelet::rtm;
   srcParams.halfSrc = 40;
   srcParams.maxF = 40.0;
@@ -42,8 +42,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing solver..." << std::endl;
   }
   int p = 2;
-  double tf = 2*M_PI;
-  double dtSnap = M_PI/10.0;
+  double tf = 2.0;
+  double dtSnap = 0.01;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "p = " << p << std::endl;
     std::cout << "tf = " << tf << std::endl;

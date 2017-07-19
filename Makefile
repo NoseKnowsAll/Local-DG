@@ -1,6 +1,6 @@
 CC = mpiicpc
 #mpic++
-DEBUG := TRUE
+DEBUG := 
 
 
 
@@ -18,8 +18,8 @@ ifeq ($(CC), mpiicpc)
  INCLUDE = -I. -I/usr/include
  LIBES   = -L. -L/usr/lib
 
- CFLAGS = -mkl -std=c++11 ${DEBUG_FLAGS}
- LFLAGS = -mkl -std=c++11 ${DEBUG_FLAGS}
+ CFLAGS = -O3 -mkl -std=c++11 ${DEBUG_FLAGS}
+ LFLAGS = -O3 -mkl -std=c++11 ${DEBUG_FLAGS}
 else
  LAPACK = -llapacke -llapack -lblas -lm
  LIBS    = ${LAPACK}
