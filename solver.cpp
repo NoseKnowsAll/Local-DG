@@ -38,6 +38,7 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   
   // Compute interpolation matrices
   precomputeInterpMatrices(); // sets nQV, xQV
+  mesh.setupQuads(xQV, nQV);
   
   // Initialize u and physics
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
@@ -293,19 +294,11 @@ void Solver::initialCondition() {
       double x = mesh.globalCoords(0,iN,k);
       double y = mesh.globalCoords(1,iN,k);
       
-      u(iN, 0, k) = 0.0;//-std::sin(x);
-      u(iN, 1, k) = 0.0;//-std::sin(y);
-      u(iN, 2, k) = 0.0;// std::sin(x)*std::sin(y);
+      u(iN, 0, k) = 0.0;
+      u(iN, 1, k) = 0.0;
+      u(iN, 2, k) = 0.0;
       u(iN, 3, k) = 0.0;
       u(iN, 4, k) = 0.0;
-      
-      //u(iN, iS, k) = std::sin(2*x*M_PI)*std::sin(2*y*M_PI)*std::sin(2*z*M_PI);
-      
-      /*
-      u(iN, 0, k) = std::exp(-100*std::pow(x-.5, 2.0));
-      u(iN, 1, k) = std::exp(-100*std::pow(y-.5, 2.0));
-      u(iN, 2, k) = std::exp(-100*std::pow(z-.5, 2.0));
-      */
       
     }
   }
@@ -320,18 +313,6 @@ void Solver::trueSolution(darray& uTrue, double t) const {
       
       double x = mesh.globalCoords(0,iN,k);
       double y = mesh.globalCoords(1,iN,k);
-      // True solution = convection u0(x-a*t)
-      /*
-      uTrue(iN, iS, k) = std::sin(2*fmod(x-p.a[0]*t+5.0,1.0)*M_PI)
-        *std::sin(2*fmod(y-p.a[1]*t+5.0,1.0)*M_PI)
-	*std::sin(2*fmod(z-p.a[2]*t+5.0,1.0)*M_PI);
-      */
-      
-      // True solution = conv-diff
-      /*
-      uTrue(iN, 0, k) = -std::sin(x-p.a[0]*t)*std::exp(-p.eps*t);
-      uTrue(iN, 1, k) = -std::sin(y-p.a[1]*t)*std::exp(-p.eps*t);
-      */
       
     }
   }
@@ -413,21 +394,6 @@ void Solver::dgTimeStep() {
       success = exportToXYZVFile("output/xyzp.txt", iTime/stepsPerSnap, mesh.globalQuads, pressure);
       if (!success)
 	exit(-1);
-      
-      /* TODO: debugging for convection problem
-      double norm = 0.0;
-      for (int iK = 0; iK < mesh.nElements; ++iK) {
-	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iN = 0; iN < dofs; ++iN) {
-	    uTrue(iN, iS, iK) -= u(iN, iS, iK);
-	    if (std::abs(uTrue(iN, iS, iK)) > norm) {
-	      norm = std::abs(uTrue(iN, iS, iK));
-	    }
-	  }
-	}
-      }
-      std::cout << "infinity norm at time " << iTime*dt << " = " << norm << std::endl;
-      // END TODO */
       
     }
     
@@ -794,7 +760,6 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
   int nQF = mesh.nFQNodes;
   
   // Finalizes sends/recvs
-  // TODO: would there really be any benefit to waiting on only some of the faces first?
   MPI_Waitall(2*MPIUtil::N_FACES, rk4Reqs, MPI_STATUSES_IGNORE);
   
   // Unpack data
@@ -903,9 +868,9 @@ inline void Solver::fluxC(const darray& uK, darray& fluxes, double lambda, doubl
   
   // -S = -CE
   fluxes(nstrains+0,0) = -(lambda+2*mu)*uK(0) - lambda*uK(1);
-  fluxes(nstrains+1,1) = -(lambda+2*mu)*uK(1) - lambda*uK(0);
   fluxes(nstrains+0,1) = -(2*mu)*uK(2);
   fluxes(nstrains+1,0) = -(2*mu)*uK(2);
+  fluxes(nstrains+1,1) = -(lambda+2*mu)*uK(1) - lambda*uK(0);
   
   /*
   // Convection-diffusion along each dimension
@@ -962,8 +927,8 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   fluxC(uN, FN, lambdaN, muN);
   
   // maximum vel = vp = avg of vp at each quadrature point
-  double vpK = std::sqrt(lambdaK + 2*muK)/rhoK;
-  double vpN = std::sqrt(lambdaN + 2*muN)/rhoN;
+  double vpK = std::sqrt((lambdaK + 2*muK)/rhoK);
+  double vpN = std::sqrt((lambdaN + 2*muN)/rhoN);
   //double C = (vpK+vpN)/2.0;
   double C = std::max(vpK, vpN); // TODO: is this better?
   
@@ -972,7 +937,6 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
     for (int l = 0; l < Mesh::DIM; ++l) {
       fluxes(iS) += (FN(iS,l) + FK(iS,l))/2.0*normalK(l)
 	- C/2.0*(uN(iS) - uK(iS))*normalK(l)*normalK(l);
-      // TODO: is this negative sign correct?
     }
   }
   
@@ -1145,9 +1109,9 @@ void Solver::computePressure(const darray& uInterpV, darray& pressure) const {
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iQ = 0; iQ < nQV; ++iQ) {
       
-      pressure(iQ,1,iK) = 0.0;
+      pressure(iQ,0,iK) = 0.0;
       for (int iS = 0; iS < Mesh::DIM; ++iS) {
-	pressure(iQ,1,iK) += (p.lambda(iQ,iK) + 2.0*p.mu(iQ,iK)/Mesh::DIM)*uInterpV(iQ,iS,iK);
+	pressure(iQ,0,iK) += (p.lambda(iQ,iK) + 2.0*p.mu(iQ,iK)/Mesh::DIM)*uInterpV(iQ,iS,iK);
       }
       
     }

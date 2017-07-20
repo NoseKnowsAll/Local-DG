@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
   srcParams.srcPos(0,0) = 100.0;
   srcParams.srcPos(1,0) = 50.0;
   srcParams.srcAmps.realloc(nsrcs);
-  srcParams.srcAmps(0) = 1.0e5;
+  srcParams.srcAmps(0) = 1.0;
   srcParams.type = Source::Wavelet::rtm;
   srcParams.halfSrc = 40;
   srcParams.maxF = 40.0;
