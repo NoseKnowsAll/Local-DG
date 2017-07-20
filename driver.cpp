@@ -42,8 +42,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing solver..." << std::endl;
   }
   int p = 2;
-  double tf = 2.0;
-  double dtSnap = 0.01;
+  double tf = 0.1;
+  double dtSnap = 0.005;
   if (mpi.rank == mpi.ROOT) {
     std::cout << "p = " << p << std::endl;
     std::cout << "tf = " << tf << std::endl;

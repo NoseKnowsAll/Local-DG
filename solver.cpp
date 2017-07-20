@@ -237,13 +237,10 @@ void Solver::initMaterialProps() {
     }
   }
   else {
-    // Interpolate data from grid onto quadrature points
+    // Interpolate data from input grid onto quadrature points
     for (int k = 0; k < mesh.nElements; ++k) {
       for (int iQ = 0; iQ < nQV; ++iQ) {
-	darray coord{Mesh::DIM};
-	for (int l = 0; l < Mesh::DIM; ++l) {
-	  coord(l) = mesh.tempMapping(0,l,k)*xQV(l,iQ)+mesh.tempMapping(1,l,k);
-	}
+	darray coord{&mesh.globalQuads(0,iQ,k), Mesh::DIM};
 	
 	double vpi = gridInterp(coord, vp, origins, deltas);
 	double vsi = gridInterp(coord, vs, origins, deltas);
@@ -373,6 +370,7 @@ void Solver::dgTimeStep() {
   darray uInterpV{nQV, nStates, mesh.nElements, 1};
   darray ks{dofs, nStates, mesh.nElements, nStages};
   darray uTrue{dofs, nStates, mesh.nElements, 1};
+  darray pressure{nQV, 1, mesh.nElements};
   
   int nBElems = max(mesh.mpiNBElems);
   darray toSend{nQF, nStates, nBElems, Mesh::DIM, MPIUtil::N_FACES};
@@ -403,12 +401,16 @@ void Solver::dgTimeStep() {
 	std::cout << "Saving snapshot " << iTime/stepsPerSnap << "...\n";
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
-      trueSolution(uTrue, iTime*dt);
+      
+      // Must interpolate u before computing pressure
+      interpolate(u, uInterpF, uInterpV, toSend, toRecv, rk4Reqs, 1);
+      computePressure(uInterpV, pressure);
+      
       // Output snapshot files
-      bool success = initXYZVFile("output/xyzu.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
+      bool success = initXYZVFile("output/xyzp.txt", Mesh::DIM, iTime/stepsPerSnap, "pressure", 1);
       if (!success)
 	exit(-1);
-      success = exportToXYZVFile("output/xyzu.txt", iTime/stepsPerSnap, mesh.globalCoords, u);
+      success = exportToXYZVFile("output/xyzp.txt", iTime/stepsPerSnap, mesh.globalQuads, pressure);
       if (!success)
 	exit(-1);
       
@@ -654,7 +656,7 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
       auto nF = mesh.eToF(iF, iK);
       auto nK = mesh.eToE(iF, iK);
       
-      darray normalK{&mesh.normals(0, iF, iK), Mesh::DIM};
+      darray normalK{&mesh.normals(0,iF,iK), Mesh::DIM};
       
       for (int iFQ = 0; iFQ < nQF; ++iFQ) {
 	
@@ -962,8 +964,8 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   // maximum vel = vp = avg of vp at each quadrature point
   double vpK = std::sqrt(lambdaK + 2*muK)/rhoK;
   double vpN = std::sqrt(lambdaN + 2*muN)/rhoN;
-  double C = (vpK+vpN)/2.0;
-  //double C = std::max(vpK, vpN); // TODO: is this better?
+  //double C = (vpK+vpN)/2.0;
+  double C = std::max(vpK, vpN); // TODO: is this better?
   
   fluxes.fill(0.0);
   for (int iS = 0; iS < nStates; ++iS) {
@@ -1128,4 +1130,27 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   fluxes[2] = 0.5e0 * t8 * t13 + 0.5e0 * t22 * t26 + 0.5e0 * t10 * t143 - 0.5e0 * t51 * t122 - 0.50e0 * t148 * t46 * t38 - 0.5e0 * t155 * t10;
   fluxes[3] = 0.5e0 * (0.14e1 * t55 - t69) * t13 + 0.5e0 * (0.14e1 * t76 - t90) * t26 - 0.5e0 * t51 * (t55 - t76) - 0.50e0 * t148 * t94 * t38 - 0.5e0 * t155 * t50;
   */
+}
+
+/**
+   Computes the pressure based off of the interpolated input wavefield uInterpV
+   Assumes hydrostatic pressure is the only pressure
+*/
+void Solver::computePressure(const darray& uInterpV, darray& pressure) const {
+  
+  // pressure = average of normal stresses = 1/d*sum(S_{ll})
+  
+  // Computed at quadrature points because we only have 
+  // material properties at quadrature points
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      
+      pressure(iQ,1,iK) = 0.0;
+      for (int iS = 0; iS < Mesh::DIM; ++iS) {
+	pressure(iQ,1,iK) += (p.lambda(iQ,iK) + 2.0*p.mu(iQ,iK)/Mesh::DIM)*uInterpV(iQ,iS,iK);
+      }
+      
+    }
+  }
+  
 }

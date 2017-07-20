@@ -61,6 +61,9 @@ public:
   /** Initialize global nodes from solver's Chebyshev nodes */
   void setupNodes(const darray& chebyNodes, int _order);
   
+  /** Initialize global quadrature points from solver's reference quadrature points */
+  void setupQuads(const darray& xQV, int nQV);
+  
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
   /** MPI Utility class */
@@ -105,6 +108,12 @@ public:
      globalCoords(:, i,k) = 3D location of node i
   */
   darray globalCoords;
+  /**
+     True coordinates of quadrature points for each element:
+     For every element k, quadrature point i,
+     globalQuads(:, i,k) = 3D location of quadrature point i
+  */
+  darray globalQuads;
   ///////////////////////////////////////
   // End of variables initialized after solver is created
   ///////////////////////////////////////

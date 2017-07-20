@@ -93,19 +93,20 @@ private:
   void initMaterialProps();
   void initialCondition();
   void trueSolution(darray& uTrue, double t) const;
+  void computePressure(const darray& uInterpV, darray& pressure) const;
   
   void rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const;
-  void rk4Rhs(const darray& uCurr, darray& uInterp2D, darray& uInterp3D, 
+  void rk4Rhs(const darray& uCurr, darray& uInterpF, darray& uInterpV, 
 	      darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, 
 	      darray& ks, int istage, int iTime) const;
   
-  void interpolate(const darray& curr, darray& toInterp2D, darray& toInterp3D,
+  void interpolate(const darray& curr, darray& toInterpF, darray& toInterpV,
 		   darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const;
   
   void sourceVolume(darray& residual, int iTime) const;
   
-  void convectDGFlux(const darray& uInterp2D, darray& residual) const;
-  void convectDGVolume(const darray& uInterp3D, darray& residual) const;
+  void convectDGFlux(const darray& uInterpF, darray& residual) const;
+  void convectDGVolume(const darray& uInterpV, darray& residual) const;
   
   void numericalFluxC(const darray& uN, const darray& uK, 
 		      const darray& normalK, darray& fluxes,

@@ -68,6 +68,7 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
   nFNodes{},
   nFQNodes{},
   globalCoords{},
+  globalQuads{},
   vertices{},
   eToV{},
   beToE{},
@@ -338,6 +339,7 @@ Mesh::Mesh(const Mesh& other) :
   nFNodes{other.nFNodes},
   nFQNodes{other.nFQNodes},
   globalCoords{other.globalCoords},
+  globalQuads{other.globalQuads},
   vertices{other.vertices},
   eToV{other.eToV},
   beToE{other.beToE},
@@ -375,6 +377,20 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   int nQ = (int)std::ceil(order+1/2.0);
   nFQNodes = initFaceMap(efToQ, nQ);
   mpi.initDatatype(nFQNodes);
+  
+}
+
+/** Initialize global quadrature points from solver's reference quadrature points */
+void Mesh::setupQuads(const darray& xQV, int nQV) {
+  
+  globalQuads.realloc(DIM, nQV, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      for (int l = 0; l < DIM; ++l) {
+	globalQuads(l,iQ,iK) = tempMapping(0,l,iK)*xQV(l,iQ)+tempMapping(1,l,iK);
+      }
+    }
+  }
   
 }
 
