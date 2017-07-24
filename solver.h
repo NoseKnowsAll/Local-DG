@@ -17,6 +17,7 @@
 #include "MPIUtil.h"
 #include "dgMath.h"
 #include "io.h"
+#include "rk4.h"
 #include "array.h"
 
 class Solver {
@@ -51,8 +52,8 @@ private:
   // For Elastic
   typedef struct {
     // Use reasonable constants when no input file
-    const double vpConst = 2000.0;
-    const double vsConst = 800.0;
+    const double vpConst = 200.0;
+    const double vsConst = 80.0;
     const double rhoConst = 1.0;
     double C;      // max velocity throughout domain
     darray lambda; // Lame's first parameter

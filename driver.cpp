@@ -35,21 +35,21 @@ int main(int argc, char *argv[]) {
   srcParams.srcAmps(0) = 1.0;
   srcParams.type = Source::Wavelet::rtm;
   srcParams.halfSrc = 40;
-  srcParams.maxF = 40.0;
+  srcParams.maxF = 10.0;
   
   // Initialize solver
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing solver..." << std::endl;
   }
-  int p = 2;
+  int order = 4;
   double tf = 0.1;
   double dtSnap = 0.005;
   if (mpi.rank == mpi.ROOT) {
-    std::cout << "p = " << p << std::endl;
+    std::cout << "order = " << order << std::endl;
     std::cout << "tf = " << tf << std::endl;
     std::cout << "nx = " << nx << std::endl;
   }
-  Solver dgSolver{p, srcParams, dtSnap, tf, mesh};
+  Solver dgSolver{order, srcParams, dtSnap, tf, mesh};
   
   // Run time steps
   dgSolver.dgTimeStep();

@@ -324,32 +324,12 @@ void Solver::trueSolution(darray& uTrue, double t) const {
 */
 void Solver::dgTimeStep() {
   
-  // Define RK4
-  int nStages = 4;
-  darray c{nStages};
-  c(0) = 0.0;
-  c(1) = 0.5;
-  c(2) = 0.5;
-  c(3) = 1.0;
-  
-  darray b{nStages};
-  b(0) = 1/6.0;
-  b(1) = 1/3.0;
-  b(2) = 1/3.0;
-  b(3) = 1/6.0;
-  
-  // explicit & diagonal => store nnz of A as off-diagonal vector
-  darray diagA{nStages-1};
-  diagA(0) = 0.5;
-  diagA(1) = 0.5;
-  diagA(2) = 1.0;
-  
   // Allocate working memory
   int nQF = mesh.nFQNodes;
   darray uCurr{dofs, nStates, mesh.nElements, 1};
   darray uInterpF{nQF, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, 1};
   darray uInterpV{nQV, nStates, mesh.nElements, 1};
-  darray ks{dofs, nStates, mesh.nElements, nStages};
+  darray ks{dofs, nStates, mesh.nElements, rk4::nStages};
   darray uTrue{dofs, nStates, mesh.nElements, 1};
   darray pressure{nQV, 1, mesh.nElements};
   
@@ -388,20 +368,20 @@ void Solver::dgTimeStep() {
       computePressure(uInterpV, pressure);
       
       // Output snapshot files
-      bool success = initXYZVFile("output/xyzp.txt", Mesh::DIM, iTime/stepsPerSnap, "pressure", 1);
+      bool success = initXYZVFile("output/xyu.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
       if (!success)
 	exit(-1);
-      success = exportToXYZVFile("output/xyzp.txt", iTime/stepsPerSnap, mesh.globalQuads, pressure);
+      success = exportToXYZVFile("output/xyu.txt", iTime/stepsPerSnap, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
       
     }
     
     // Use RK4 to compute k values at each stage
-    for (int istage = 0; istage < nStages; ++istage) {
+    for (int istage = 0; istage < rk4::nStages; ++istage) {
       
       // Updates uCurr = u+dt*a(s,s-1)*ks(:,s)
-      rk4UpdateCurr(uCurr, diagA, ks, istage);
+      rk4::updateCurr(uCurr, u, ks, dt, istage);
       
       // Updates ks(:,istage) = rhs(uCurr) based on DG method
       rk4Rhs(uCurr, uInterpF, uInterpV, 
@@ -411,19 +391,7 @@ void Solver::dgTimeStep() {
     }
     
     // Use RK4 to move to next time step
-    for (int istage = 0; istage < nStages; ++istage) {
-      for (int iK = 0; iK < mesh.nElements; ++iK) {
-	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iN = 0; iN < dofs; ++iN) {
-	    u(iN,iS,iK) += dt*b(istage)*ks(iN,iS,iK,istage);
-	    
-	    if (istage == nStages-1 && iK == 0 && iS == 4 && mpi.rank == mpi.ROOT) {
-	      std::cout << "u[" << iN << "] = " << u(iN,iS,iK) << std::endl;
-	    }
-	  }
-	}
-      }
-    }
+    rk4::integrateTime(u, ks, dt);
     
   }
   
@@ -435,32 +403,6 @@ void Solver::dgTimeStep() {
   
 }
 
-/**
-   Update current u variable based on diagonal Butcher tableau of RK4
-*/
-void Solver::rk4UpdateCurr(darray& uCurr, const darray& diagA, const darray& ks, int istage) const {
-  
-  // Update uCurr
-  if (istage == 0) {
-    for (int iK = 0; iK < mesh.nElements; ++iK) {
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iN = 0; iN < dofs; ++iN) {
-	  uCurr(iN,iS,iK) = u(iN,iS,iK);
-	}
-      }
-    }
-  }
-  else {
-    for (int iK = 0; iK < mesh.nElements; ++iK) {
-      for (int iS = 0; iS < nStates; ++iS) {
-	for (int iN = 0; iN < dofs; ++iN) {
-	  uCurr(iN,iS,iK) = u(iN,iS,iK) + dt*diagA(istage-1)*ks(iN,iS,iK,istage-1);
-	}
-      }
-    }
-  }
-  
-}
 
 /**
    Computes the RHS of Runge Kutta method for use with DG method.
