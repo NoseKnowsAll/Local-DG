@@ -124,14 +124,25 @@ void Solver::precomputeLocalMatrices() {
   }
   
   // Initialize mass matrices = integrate(ps*phi_i*phi_j)
-  Mel.realloc(dofs,dofs,2,mesh.nElements);
-  Mipiv.realloc(dofs,2,mesh.nElements);
-  darray localJPI{nQV, order+1,order+1};
+  int storage = 2;
+  Mel.realloc(dofs,dofs,storage,mesh.nElements);
+  Mipiv.realloc(dofs,storage,mesh.nElements);
+  darray localJPI{nQV, dofs};
   darray rhoQ{nQV, mesh.nElements};
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
 	      nQV, mesh.nElements, dofs, 1.0, InterpV.data(), nQV,
 	      p.rho.data(), dofs, 0.0, rhoQ.data(), nQV);
   
+  // Set state-to-storage mapping
+  sToS.realloc(nStates);
+  for (int s = 0; s < Mesh::DIM*(Mesh::DIM+1)/2; ++s) {
+    sToS(s) = 0; // upper diagonal of strain tensor
+  }
+  for (int s = Mesh::DIM*(Mesh::DIM+1)/2; s < nStates; ++s) {
+    sToS(s) = 1; // velocities
+  }
+  
+  // Compute mass matrix = Interp'*W*Jk*Ps*Interp
   for (int k = 0; k < mesh.nElements; ++k) {
     
     // Compute Jacobian = det(Jacobian(Tk))
@@ -140,29 +151,31 @@ void Solver::precomputeLocalMatrices() {
       Jacobian *= mesh.tempMapping(0,l,k);
     }
       
-    for (int s = 0; s < 2; ++s) {
+    for (int s = 0; s < storage; ++s) {
       
-      // Compute localJPI = J*P*Interp
-      if (s == 0) {
+      // localJPI = Jk*Ps*Interp
+      switch(s) {
+      case 0:
 	// P == I
 	for (int iN = 0; iN < dofs; ++iN) {
 	  for (int iQ = 0; iQ < nQV; ++iQ) {
 	    localJPI(iQ, iN) = Jacobian*InterpV(iQ, iN);
 	  }
 	}
-      }
-      else {
+	break;
+      case 1:
 	// P == rho*I
 	for (int iN = 0; iN < dofs; ++iN) {
 	  for (int iQ = 0; iQ < nQV; ++iQ) {
 	    localJPI(iQ, iN) = Jacobian*rhoQ(iQ)*InterpV(iQ, iN);
 	  }
 	}
+	break;
       }
       
       // Mel = Interp'*W*Jk*Ps*Interp
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-		  dofs, dofs, nQV, Jacobian, InterpW.data(), nQV, 
+		  dofs, dofs, nQV, 1.0, InterpW.data(), nQV, 
 		  localJPI.data(), nQV, 0.0, &Mel(0,0,s,k), dofs);
       
       // Mel overwritten with U*D*U'
@@ -171,22 +184,13 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  // Set state to storage mapping
-  sToS.realloc(nStates);
-  // upper diagonal of strain tensor
-  for (int s = 0; s < Mesh::DIM*(Mesh::DIM+1)/2; ++s) {
-    sToS(s) = 0;
-  }
-  // velocities
-  for (int s = Mesh::DIM*(Mesh::DIM+1)/2; s < nStates; ++s) {
-    sToS(s) = 1;
-  }
-  
   // TODO: everything below here needs to work with new mappings
   darray alpha{Mesh::DIM};
-  alpha(0) = mesh.minDX/2.0;
-  alpha(1) = mesh.minDY/2.0;
-  double Jacobian = alpha(0)*alpha(1);
+  double Jacobian = 1.0;
+  for (int l = 0; l < Mesh::DIM; ++l) {
+    alpha(l) = mesh.tempMapping(0,l,0);
+    Jacobian *= mesh.tempMapping(0,l,0);
+  }
   
   // Initialize K matrices = dx_l(phi_i)*weights
   Kels.realloc(nQV,dofs,Mesh::DIM);
@@ -275,7 +279,8 @@ void Solver::initTimeStepping(double dtSnap) {
   }
   
   // Choose dt based on CFL condition
-  dt = 0.1*std::min(mesh.minDX, mesh.minDY)/(p.C*(std::max(1, order*order)));
+  double CFL = 0.1;
+  dt = CFL*std::min(mesh.minDX, mesh.minDY)/(p.C*(std::max(1, order*order)));
   // Ensure we will exactly end at tf
   timesteps = static_cast<dgSize>(std::ceil(tf/dt));
   dt = tf/timesteps;
@@ -287,6 +292,9 @@ void Solver::initTimeStepping(double dtSnap) {
 /** Sets u according to an initial condition */
 void Solver::initialCondition() {
   
+  trueSolution(u, -p.src.halfSrc*dt);
+  
+  /*
   // Sin function allowing for periodic initial condition
   for (int k = 0; k < mesh.nElements; ++k) {
     for (int iN = 0; iN < dofs; ++iN) {
@@ -302,17 +310,34 @@ void Solver::initialCondition() {
       
     }
   }
+  */
   
 }
 
 /** Computes the true solution at time t in uTrue */
 void Solver::trueSolution(darray& uTrue, double t) const {
   
-  for (int k = 0; k < mesh.nElements; ++k) {
+  double pd[Mesh::DIM] = {1, 0};
+  double dp[Mesh::DIM] = {1, 0};
+  double ds[Mesh::DIM] = {0, 1};
+  double k = 2*M_PI;
+  
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iN = 0; iN < dofs; ++iN) {
       
-      double x = mesh.globalCoords(0,iN,k);
-      double y = mesh.globalCoords(1,iN,k);
+      double x[Mesh::DIM] = {mesh.globalCoords(0,iN,iK), mesh.globalCoords(1,iN,iK)};
+      
+      double pval = k*(x[0]*pd[0]+x[1]*pd[1]-p.vpConst*t);
+      double sval = k*(x[0]*pd[0]+x[1]*pd[1]-p.vsConst*t);
+      
+      // E
+      uTrue(iN, 0, iK) = -k*(pd[0]*dp[0]*std::sin(pval) + pd[0]*ds[0]*std::sin(sval));
+      uTrue(iN, 1, iK) = -k*(pd[1]*dp[1]*std::sin(pval) + pd[1]*ds[1]*std::sin(sval));
+      uTrue(iN, 2, iK) = -k*(pd[0]*dp[1]*std::sin(pval) + pd[0]*ds[1]*std::sin(sval)
+			   + pd[1]*dp[0]*std::sin(pval) + pd[1]*ds[0]*std::sin(sval))/2.0;
+      // v
+      uTrue(iN, 3, iK) = k*(p.vpConst*dp[0]*std::sin(pval) + p.vsConst*ds[0]*std::sin(sval));
+      uTrue(iN, 4, iK) = k*(p.vpConst*dp[1]*std::sin(pval) + p.vsConst*ds[1]*std::sin(sval));
       
     }
   }
@@ -363,9 +388,8 @@ void Solver::dgTimeStep() {
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
       
-      // Must interpolate u before computing pressure
-      interpolate(u, uInterpF, uInterpV, toSend, toRecv, rk4Reqs, 1);
-      computePressure(uInterpV, pressure);
+      // Compute true solution
+      trueSolution(uTrue, iTime*dt);
       
       // Output snapshot files
       bool success = initXYZVFile("output/xyu.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
@@ -374,6 +398,10 @@ void Solver::dgTimeStep() {
       success = exportToXYZVFile("output/xyu.txt", iTime/stepsPerSnap, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
+      
+      // Compute error
+      double error = computeL2Error(u, uTrue);
+      std::cout << "L2 error = " << error << std::endl;
       
     }
     
@@ -429,7 +457,7 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterpF, darray& uInterpV,
   convectDGVolume(uInterpV, residual);
   
   // ks(:,istage) += B
-  sourceVolume(residual, iTime);
+  sourceVolume(residual, istage, iTime);
   
   // ks(:,istage) = Mel\ks(:,istage)
   for (int k = 0; k < mesh.nElements; ++k) {
@@ -488,12 +516,12 @@ void Solver::interpolate(const darray& curr, darray& toInterpF, darray& toInterp
 /**
    Computes right-hand-side B term for use in the DG formulation
 */
-void Solver::sourceVolume(darray& residual, int iTime) const {
+void Solver::sourceVolume(darray& residual, int istage, int iTime) const {
   
   darray localJWI{nQV, dofs};
   darray f{nQV};
   darray b{dofs};
-  auto waveAmp = p.src.wavelet(iTime+p.src.halfSrc);
+  auto waveAmp = p.src.wavelet(istage, iTime+p.src.halfSrc);
   
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     
@@ -1058,5 +1086,81 @@ void Solver::computePressure(const darray& uInterpV, darray& pressure) const {
       
     }
   }
+  
+}
+
+
+/**
+   Compute the L2 error ||u-uTrue||_{L^2} of a function defined at the nodes.
+   Reuses the storage in uTrue to compute this error.
+*/
+double Solver::computeL2Error(const darray& uCurr, darray& uTrue) const {
+  
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iS = 0; iS < nStates; ++iS) {
+      for (int iN = 0; iN < dofs; ++iN) {
+	uTrue(iN,iS,iK) -= uCurr(iN,iS,iK);
+      }
+    }
+  }
+  
+  return computeL2Norm(uTrue);
+}
+
+/**
+   Compute the L2 norm ||u||_{L^2} of a function defined at the nodes.
+   Norm = u'*Mel*u
+*/
+double Solver::computeL2Norm(const darray& uCurr) const {
+  
+  darray Mloc{dofs, dofs};
+  darray JIloc{nQV, dofs};
+  darray Mu{dofs,nStates};
+  darray norms{nStates, nStates}; // diagonal contains L2Norm of each state
+  darray l2Norms{nStates};
+  
+  for (int iS = 0; iS < nStates; ++iS) {
+    l2Norms(iS) = 0.0;
+  }
+  
+  // Add local contribution to norm at each element
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    
+    // Compute Jacobian = det(Jacobian(Tk))
+    double Jacobian = 1.0;
+    for (int l = 0; l < Mesh::DIM; ++l) {
+      Jacobian *= mesh.tempMapping(0,l,iK);
+    }
+    
+    // JIloc = Jk*Interp
+    for (int iN = 0; iN < dofs; ++iN) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	JIloc(iQ,iN) = Jacobian*InterpV(iQ,iN);
+      }
+    }
+    
+    // Mloc = Interp'*W*Jk*Interp
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		dofs, dofs, nQV, 1.0, InterpW.data(), nQV,
+		JIloc.data(), nQV, 0.0, Mloc.data(), dofs);
+    
+    // Mu = Mloc*u
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		dofs, nStates, dofs, 1.0, Mloc.data(), dofs,
+		&uCurr(0,0,iK), dofs, 0.0, Mu.data(), dofs);
+    
+    // L2Norm = Mu'*u
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		nStates, nStates, dofs, 1.0, Mu.data(), dofs,
+		&uCurr(0,0,iK), dofs, 0.0, norms.data(), nStates);
+    
+    // Add local contribution to norm
+    for (int iS = 0; iS < nStates; ++iS) {
+      l2Norms(iS) += norms(iS,iS);
+    }
+    
+  }
+  
+  return max(l2Norms);
   
 }

@@ -12,7 +12,7 @@ class Source {
 public:
 
   enum class Wavelet {
-    cos, ricker, rtm
+    cos, ricker, rtm, null
   };
   
   // Input parameters for specifying source

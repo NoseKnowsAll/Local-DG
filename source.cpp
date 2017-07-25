@@ -6,7 +6,7 @@ Source::Source(const Params& in) :
   type{in.type},
   wavelet{},
   halfSrc{in.halfSrc},
-  nt{std::max(in.timesteps, in.halfSrc)+in.halfSrc+1}
+  nt{std::max(in.timesteps, in.halfSrc+1)+in.halfSrc}
 {
   init(in);
 }
@@ -15,8 +15,8 @@ void Source::init(const Params& in) {
   
   type = in.type;
   halfSrc = in.halfSrc;
-  nt = std::max(in.timesteps, in.halfSrc)+in.halfSrc+1;
-  wavelet.realloc(nt*rk4::nStages);
+  nt = std::max(in.timesteps, in.halfSrc+1)+in.halfSrc;
+  wavelet.realloc(rk4::nStages, nt);
   
   switch(type) {
   case Wavelet::cos:
@@ -24,11 +24,17 @@ void Source::init(const Params& in) {
     break;
   case Wavelet::ricker:
     double fundF = in.maxF/2.65;
-    std::cerr << "ERROR: Ricker wavelet not programmed yet!" << std::endl; 
+    std::cerr << "ERROR: Ricker wavelet is not yet programmed!" << std::endl; 
     break;
   case Wavelet::rtm:
     double minF = 0.0; // Previously was [1, maxF]
     initRtm(in.dt, minF, in.maxF);
+    break;
+  case Wavelet::null:
+    // To allow for no source term
+    halfSrc = 0;
+    nt = in.timesteps;
+    wavelet.realloc(rk4::nStages, nt);
     break;
   default:
     std::cerr << "ERROR: Asking for a bad source wavelet!" << std::endl;
@@ -48,18 +54,25 @@ void Source::initCos(double dt, double maxF) {
   // TODO: update so that wavelet has nstages involved
   
   // Initialize tapered wavelet at 0.9 max frequency
-  darray totalSource{nsrc*rk4::nStages};
+  darray totalSource{rk4::nStages, nsrc};
   for (int it = 0; it < nsrc; ++it) {
-    double taper = (it < halfSrc ? 0.5+0.5*std::cos(M_PI*(it-halfSrc)/halfSrc) : 1);
-    totalSource(it) = taper*std::cos(2*M_PI*freq*(it-halfSrc)*dt);
+    for (int is = 0; is < rk4::nStages; ++is) {
+      double tOff = it - halfSrc + rk4::c[is];
+      double taper = (it < halfSrc ? 0.5+0.5*std::cos(M_PI*tOff/halfSrc) : 1);
+      totalSource(is,it) = taper*std::cos(2*M_PI*freq*tOff*dt);
+    }
   }
   
   // Copy wavelet into array and zero the tail
   for (int it = 0; it < std::min(nsrc,nt); ++it) {
-    wavelet(it) = totalSource(it);
+    for (int is = 0; is < rk4::nStages; ++is) {
+      wavelet(is,it) = totalSource(is,it);
+    }
   }
-  for (int it = std::min(nsrc,nt)+1; it < nt; ++it) {
-    wavelet(it) = 0.0;
+  for (int it = std::min(nsrc,nt); it < nt; ++it) {
+    for (int is = 0; is < rk4::nStages; ++is) {
+      wavelet(is,it) = 0.0;
+    }
   }
   
 }
@@ -156,7 +169,7 @@ void Source::initRtm(double dt, double minF, double maxF) {
   int nf = static_cast<int>(std::floor((maxF-minF)/df)+1);
   
   // Loop over frequencies
-  darray totalSource{nsrc};
+  darray totalSource{rk4::nStages,nsrc};
   for (int ifreq = 1; ifreq < nf; ++ifreq) {
     double freq = minF+(ifreq-1)*df;
     double weightF = (0.5+0.5*std::cos(M_PI*(ifreq-nf/2)/(nf/2+1)));
@@ -164,27 +177,39 @@ void Source::initRtm(double dt, double minF, double maxF) {
     
     // Add frequencies to source wavelet
     for (int it = 0; it < nsrc; ++it) {
-      totalSource(it) += std::cos(2*M_PI*(it-halfSrc)*dt)*weightF;
+      for (int is = 0; is < rk4::nStages; ++is) {
+	double tOff = it - halfSrc + rk4::c[is];
+	totalSource(is,it) += std::cos(2*M_PI*tOff*dt)*weightF;
+      }
     }
   }
   
   // Apply a time-domain taper
   for (int it = 0; it < nsrc; ++it) {
-    double taper = 0.5+0.5*std::cos(M_PI*(it-halfSrc)/halfSrc);
-    totalSource(it) *= taper;
+    for (int is = 0; is < rk4::nStages; ++is) {
+      double tOff = it - halfSrc + rk4::c[is];
+      double taper = 0.5+0.5*std::cos(M_PI*tOff/halfSrc);
+      totalSource(is,it) *= taper;
+    }
   }
   // Normalize
   double maxval = infnorm(totalSource);
   for (int it = 0; it < nsrc; ++it) {
-    totalSource(it) /= maxval;
+    for (int is = 0; is < rk4::nStages; ++is) {
+      totalSource(is,it) /= maxval;
+    }
   }
   
   // Copy wavelet into array and zero the tail
   for (int it = 0; it < std::min(nsrc,nt); ++it) {
-    wavelet(it) = totalSource(it);
+    for (int is = 0; is < rk4::nStages; ++is) {
+      wavelet(is,it) = totalSource(is,it);
+    }
   }
-  for (int it = std::min(nsrc,nt)+1; it < nt; ++it) {
-    wavelet(it) = 0.0;
+  for (int it = std::min(nsrc,nt); it < nt; ++it) {
+    for (int is = 0; is < rk4::nStages; ++is) {
+      wavelet(is,it) = 0.0;
+    }
   }
   
 }

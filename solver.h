@@ -52,9 +52,9 @@ private:
   // For Elastic
   typedef struct {
     // Use reasonable constants when no input file
-    const double vpConst = 200.0;
-    const double vsConst = 80.0;
-    const double rhoConst = 1.0;
+    const double vpConst = std::sqrt((2.2+2*1.3)/1.0); //200.0;
+    const double vsConst = std::sqrt(1.3/1.0);//80.0;
+    const double rhoConst = 1.0;//1.0;
     double C;      // max velocity throughout domain
     darray lambda; // Lame's first parameter
     darray mu;     // Lame's second parameter
@@ -104,7 +104,7 @@ private:
   void interpolate(const darray& curr, darray& toInterpF, darray& toInterpV,
 		   darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const;
   
-  void sourceVolume(darray& residual, int iTime) const;
+  void sourceVolume(darray& residual, int istage, int iTime) const;
   
   void convectDGFlux(const darray& uInterpF, darray& residual) const;
   void convectDGVolume(const darray& uInterpV, darray& residual) const;
@@ -115,6 +115,9 @@ private:
 		      double lambdaK, double muK, double rhoK) const;
   
   inline void fluxC(const darray& uK, darray& fluxes, double lambda, double mu) const;
+  
+  double computeL2Error(const darray& uCurr, darray& uTrue) const;
+  double computeL2Norm(const darray& uCurr) const;
   
   void mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const;
   void mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const;

@@ -21,9 +21,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing mesh..." << std::endl;
   }
   Point botLeft{0.0, 0.0, 0.0};
-  Point topRight{200.0, 100.0, 0.0};
-  int nx = 25;
-  Mesh mesh{2*nx, nx, nx, botLeft, topRight, mpi};
+  Point topRight{1.0, 1.0, 1.0};
+  int nx = 32;
+  Mesh mesh{nx, nx, nx, botLeft, topRight, mpi};
   
   // Initialize sources
   int nsrcs = 1;
@@ -32,8 +32,8 @@ int main(int argc, char *argv[]) {
   srcParams.srcPos(0,0) = 100.0;
   srcParams.srcPos(1,0) = 50.0;
   srcParams.srcAmps.realloc(nsrcs);
-  srcParams.srcAmps(0) = 1.0;
-  srcParams.type = Source::Wavelet::rtm;
+  srcParams.srcAmps(0) = 0.0;
+  srcParams.type = Source::Wavelet::null;
   srcParams.halfSrc = 40;
   srcParams.maxF = 10.0;
   
