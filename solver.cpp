@@ -143,12 +143,12 @@ void Solver::precomputeLocalMatrices() {
   }
   
   // Compute mass matrix = Interp'*W*Jk*Ps*Interp
-  for (int k = 0; k < mesh.nElements; ++k) {
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
     
     // Compute Jacobian = det(Jacobian(Tk))
     double Jacobian = 1.0;
     for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(0,l,k);
+      Jacobian *= mesh.tempMapping(0,l,iK);
     }
       
     for (int s = 0; s < storage; ++s) {
@@ -176,11 +176,11 @@ void Solver::precomputeLocalMatrices() {
       // Mel = Interp'*W*Jk*Ps*Interp
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
 		  dofs, dofs, nQV, 1.0, InterpW.data(), nQV, 
-		  localJPI.data(), nQV, 0.0, &Mel(0,0,s,k), dofs);
+		  localJPI.data(), nQV, 0.0, &Mel(0,0,s,iK), dofs);
       
       // Mel overwritten with U*D*U'
       LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'U', dofs,
-		     &Mel(0,0,s,k), dofs, &Mipiv(0,s,k));
+		     &Mel(0,0,s,iK), dofs, &Mipiv(0,s,iK));
     }
   }
   
@@ -233,28 +233,28 @@ void Solver::initMaterialProps() {
   
   if (!fileExists) {
     // Initialize material properties to constants
-    for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iK = 0; iK < mesh.nElements; ++iK) {
       for (int iQ = 0; iQ < nQV; ++iQ) {
-	p.lambda(iQ,k) = p.rhoConst*(p.vpConst*p.vpConst - 2*p.vsConst*p.vsConst);
-	p.mu(iQ,k) = p.rhoConst*(p.vsConst*p.vsConst);
-	p.rho(iQ,k) = p.rhoConst;
+	p.lambda(iQ,iK) = p.rhoConst*(p.vpConst*p.vpConst - 2*p.vsConst*p.vsConst);
+	p.mu(iQ,iK) = p.rhoConst*(p.vsConst*p.vsConst);
+	p.rho(iQ,iK) = p.rhoConst;
       }
     }
   }
   else {
     // Interpolate data from input grid onto quadrature points
-    for (int k = 0; k < mesh.nElements; ++k) {
+    for (int iK = 0; iK < mesh.nElements; ++iK) {
       for (int iQ = 0; iQ < nQV; ++iQ) {
-	darray coord{&mesh.globalQuads(0,iQ,k), Mesh::DIM};
+	darray coord{&mesh.globalQuads(0,iQ,iK), Mesh::DIM};
 	
 	double vpi = gridInterp(coord, vp, origins, deltas);
 	double vsi = gridInterp(coord, vs, origins, deltas);
 	double rhoi = gridInterp(coord, rhoIn, origins, deltas);
 	
 	// Isotropic elastic media formula
-	p.lambda(iQ,k) = rhoi*(vpi*vpi - 2*vsi*vsi);
-	p.mu(iQ,k) = rhoi*(vsi*vsi);
-	p.rho(iQ,k) = rhoi;
+	p.lambda(iQ,iK) = rhoi*(vpi*vpi - 2*vsi*vsi);
+	p.mu(iQ,iK) = rhoi*(vsi*vsi);
+	p.rho(iQ,iK) = rhoi;
 	
       }
     }
@@ -270,9 +270,9 @@ void Solver::initTimeStepping(double dtSnap) {
   
   // Compute p.C = maxvel = max(vp) throughout domain
   p.C = 0.0;
-  for (int k = 0; k < mesh.nElements; ++k) {
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iQ = 0; iQ < nQV; ++iQ) {
-      double vpi = std::sqrt((p.lambda(iQ,k) + 2*p.mu(iQ,k))/p.rho(iQ,k));
+      double vpi = std::sqrt((p.lambda(iQ,iK) + 2*p.mu(iQ,iK))/p.rho(iQ,iK));
       if (vpi > p.C)
 	p.C = vpi;
     }
@@ -296,17 +296,17 @@ void Solver::initialCondition() {
   
   /*
   // Sin function allowing for periodic initial condition
-  for (int k = 0; k < mesh.nElements; ++k) {
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iN = 0; iN < dofs; ++iN) {
       
-      double x = mesh.globalCoords(0,iN,k);
-      double y = mesh.globalCoords(1,iN,k);
+      double x = mesh.globalCoords(0,iN,iK);
+      double y = mesh.globalCoords(1,iN,iK);
       
-      u(iN, 0, k) = 0.0;
-      u(iN, 1, k) = 0.0;
-      u(iN, 2, k) = 0.0;
-      u(iN, 3, k) = 0.0;
-      u(iN, 4, k) = 0.0;
+      u(iN,0,iK) = 0.0;
+      u(iN,1,iK) = 0.0;
+      u(iN,2,iK) = 0.0;
+      u(iN,3,iK) = 0.0;
+      u(iN,4,iK) = 0.0;
       
     }
   }
@@ -403,6 +403,11 @@ void Solver::dgTimeStep() {
       double error = computeL2Error(u, uTrue);
       std::cout << "L2 error = " << error << std::endl;
       
+      // TODO: debugging
+      trueSolution(uTrue, iTime*dt);
+      error = computeInfError(u, uTrue);
+      std::cout << "inf error = " << error << std::endl;
+      
     }
     
     // Use RK4 to compute k values at each stage
@@ -460,11 +465,11 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterpF, darray& uInterpV,
   sourceVolume(residual, istage, iTime);
   
   // ks(:,istage) = Mel\ks(:,istage)
-  for (int k = 0; k < mesh.nElements; ++k) {
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int s = 0; s < nStates; ++s) {
       LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, 1,
-		     &Mel(0,0,sToS(s),k), dofs, &Mipiv(0,sToS(s),k),
-		     &residual(0,s,k), dofs);
+		     &Mel(0,0,sToS(s),iK), dofs, &Mipiv(0,sToS(s),iK),
+		     &residual(0,s,iK), dofs);
     }
   }
   
@@ -604,8 +609,8 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
 	// Get material properties at this point
 	double lambdaK = p.lambda(mesh.efToQ(iFQ, iF), iK);
 	double lambdaN = p.lambda(mesh.efToQ(iFQ, nF), nK);
-	double muK = p.lambda(mesh.efToQ(iFQ, iF), iK);
-	double muN = p.lambda(mesh.efToQ(iFQ, nF), nK);
+	double muK = p.mu(mesh.efToQ(iFQ, iF), iK);
+	double muN = p.mu(mesh.efToQ(iFQ, nF), nK);
 	double rhoK = p.rho(mesh.efToQ(iFQ, iF), iK);
 	double rhoN = p.rho(mesh.efToQ(iFQ, nF), nK);
 	
@@ -648,19 +653,19 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
   darray uK{nStates};
   
   // Loop over all elements, points
-  for (int k = 0; k < mesh.nElements; ++k) {
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iQ = 0; iQ < nQV; ++iQ) {
       
       // Copy data into uK
       for (int iS = 0; iS < nStates; ++iS) {
-	uK(iS) = uInterpV(iQ,iS,k);
+	uK(iS) = uInterpV(iQ,iS,iK);
       }
       // Compute fluxes
-      fluxC(uK, fluxes, p.lambda(iQ,k), p.mu(iQ,k));
+      fluxC(uK, fluxes, p.lambda(iQ,iK), p.mu(iQ,iK));
       // Copy data into fc
       for (int l = 0; l < Mesh::DIM; ++l) {
 	for (int iS = 0; iS < nStates; ++iS) {
-	  fc(iQ,iS,k,l) = fluxes(iS, l);
+	  fc(iQ,iS,iK,l) = fluxes(iS, l);
 	}
       }
       
@@ -1163,4 +1168,30 @@ double Solver::computeL2Norm(const darray& uCurr) const {
   
   return max(l2Norms);
   
+}
+
+/**
+   Compute the Inf error ||u-uTrue||_{\infty} of a function defined at the nodes.
+   Reuses the storage in uTrue to compute this error.
+*/
+double Solver::computeInfError(const darray& uCurr, darray& uTrue) const {
+  
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iS = 0; iS < nStates; ++iS) {
+      for (int iN = 0; iN < dofs; ++iN) {
+	uTrue(iN,iS,iK) -= uCurr(iN,iS,iK);
+      }
+    }
+  }
+  
+  return computeInfNorm(uTrue);
+  
+}
+
+/**
+   Compute the infinity-norm ||u||_{\infty} of a function defined at the nodes.
+   Norm = max(abs(u))
+*/
+double Solver::computeInfNorm(const darray& uCurr) const {
+  return infnorm(uCurr);
 }

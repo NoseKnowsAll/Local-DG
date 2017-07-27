@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
   }
   Point botLeft{0.0, 0.0, 0.0};
   Point topRight{1.0, 1.0, 1.0};
-  int nx = 32;
+  int nx = 8;
   Mesh mesh{nx, nx, nx, botLeft, topRight, mpi};
   
   // Initialize sources
