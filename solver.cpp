@@ -1,5 +1,9 @@
 #include "solver.h"
 
+// TODO: values start to reach +- infinity when wave hits bottom left with absorbing boundaries
+// TODO: NaNs almost instantly with nx = 15 vs 20, potentially in source term?
+// TODO: off-by-1 when initializing p.src.wavelet?
+
 /** Default constructor */
 Solver::Solver() : Solver{2, Source::Params{}, 0.1, 1.0, Mesh{}} { }
 
@@ -40,26 +44,26 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   precomputeInterpMatrices(); // sets nQV, xQV
   mesh.setupQuads(xQV, nQV);
   
-  // Initialize u and physics
+  // Initialize physics
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
-  // upper diagonal of E in Voigt notation, followed by v
-  // u = [e11, e22, e12, v1, v2]
-  u.realloc(dofs, nStates, mesh.nElements);
   initMaterialProps(); // sets mu, lambda, rho
-  initialCondition(); // sets u
   initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
   
   // Initialize sources
-  srcParams.timesteps = timesteps;
-  srcParams.dt = dt;
-  p.src.init(srcParams);
-  p.src.definePositions(srcParams, mesh, xQV);
+  initSource(srcParams); // sets p.src
+  
+  // Initialize u
+  // upper diagonal of E in Voigt notation, followed by v
+  // u = [e11, e22, e12, v1, v2]
+  u.realloc(dofs, nStates, mesh.nElements);
+  initialCondition(); // sets u
   
   // Compute local matrices
   precomputeLocalMatrices();
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "dt = " << dt << std::endl;
+    std::cout << "computing for " << timesteps+p.src.halfSrc << " time steps." << std::endl;
     std::cout << "maxvel = " << p.C << std::endl;
   }
   
@@ -265,7 +269,7 @@ void Solver::initMaterialProps() {
   
 }
 
-/* Initialize time stepping information using CFL condition */
+/** Initialize time stepping information using CFL condition */
 void Solver::initTimeStepping(double dtSnap) {
   
   // Compute p.C = maxvel = max(vp) throughout domain
@@ -289,13 +293,32 @@ void Solver::initTimeStepping(double dtSnap) {
   
 }
 
+/** Initialize source */
+void Solver::initSource(Source::Params& srcParams) {
+  
+  srcParams.timesteps = timesteps;
+  srcParams.dt = dt;
+  
+  // Compute vsMin = min(vs) throughout domain
+  srcParams.vsMin = p.C;
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      double vsi = std::sqrt(p.mu(iQ,iK)/p.rho(iQ,iK));
+      if (vsi < srcParams.vsMin)
+	srcParams.vsMin = vsi;
+    }
+  }
+  srcParams.maxDx = std::max(mesh.minDX, mesh.minDY)/order; // TODO: should be maximum
+  
+  p.src.init(srcParams);
+  p.src.definePositions(srcParams, mesh, xQV);
+}
+
 /** Sets u according to an initial condition */
 void Solver::initialCondition() {
   
-  trueSolution(u, -p.src.halfSrc*dt);
+  // trueSolution(u, -p.src.halfSrc*dt);
   
-  /*
-  // Sin function allowing for periodic initial condition
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iN = 0; iN < dofs; ++iN) {
       
@@ -310,11 +333,10 @@ void Solver::initialCondition() {
       
     }
   }
-  */
   
 }
 
-/** Computes the true solution at time t in uTrue */
+/** Computes the true solution of the plane wave problem at time t in uTrue */
 void Solver::trueSolution(darray& uTrue, double t) const {
   
   double pd[Mesh::DIM] = {1, 0};
@@ -376,6 +398,12 @@ void Solver::dgTimeStep() {
   // Loop over time steps
   for (int iTime = -p.src.halfSrc; iTime < timesteps; ++iTime) {
     
+#ifdef DEBUG
+    if (anynan(u)) {
+      std::cerr << "ERROR: NaNs in u!" << std::endl;
+    }
+#endif
+    
     if (mpi.rank == mpi.ROOT) {
       std::cout << "time = " << iTime*dt << std::endl;
     }
@@ -388,9 +416,6 @@ void Solver::dgTimeStep() {
 	std::cout << "Elapsed time so far = " << elapsed.count() << std::endl;
       }
       
-      // Compute true solution
-      trueSolution(uTrue, iTime*dt);
-      
       // Output snapshot files
       bool success = initXYZVFile("output/xyu.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
       if (!success)
@@ -399,14 +424,12 @@ void Solver::dgTimeStep() {
       if (!success)
 	exit(-1);
       
-      // Compute error
-      double error = computeL2Error(u, uTrue);
-      std::cout << "L2 error = " << error << std::endl;
-      
-      // TODO: debugging
-      trueSolution(uTrue, iTime*dt);
-      error = computeInfError(u, uTrue);
-      std::cout << "inf error = " << error << std::endl;
+      double norm = computeL2Norm(u);
+      std::cout << "L2 norm = " << norm << std::endl;
+      if (std::isnan(norm)) {
+	std::cerr << "ERROR: NaNs detected by norm calculation!" << std::endl;
+	exit(-1);
+      }
       
     }
     
@@ -544,8 +567,15 @@ void Solver::sourceVolume(darray& residual, int istage, int iTime) const {
     }
     
     // Compute f = rho(x)*g(x)*w(t)
+    bool debug = false;
     for (int iQ = 0; iQ < nQV; ++iQ) {
       f(iQ) = p.rho(iQ,iK)*p.src.weights(iQ,iK)*waveAmp;
+      if (f(iQ) != 0)
+	debug = true;
+    }
+    
+    if (debug) {
+      f(0);
     }
     
     // Compute b = Interp'*W*J*f
@@ -594,32 +624,60 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
     for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
       
       // For every face, compute fstar = fc*(InterpF*u)
-      auto nF = mesh.eToF(iF, iK);
       auto nK = mesh.eToE(iF, iK);
       
       darray normalK{&mesh.normals(0,iF,iK), Mesh::DIM};
       
-      for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+      if (nK < 0) { // boundary conditions
 	
-	// Get all state variables at this point
-	for (int iS = 0; iS < nStates; ++iS) {
-	  uK(iS) = uInterpF(iFQ, iS, iF, iK);
-	  uN(iS) = uInterpF(iFQ, iS, nF, nK);
+	for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	  
+	  // Get all state variables at this point
+	  for (int iS = 0; iS < nStates; ++iS) {
+	    uK(iS) = uInterpF(iFQ, iS, iF, iK);
+	  }
+	  // Get material properties at this point
+	  double lambdaK = p.lambda(mesh.efToQ(iFQ, iF), iK);
+	  double muK = p.mu(mesh.efToQ(iFQ, iF), iK);
+	  double rhoK = p.rho(mesh.efToQ(iFQ, iF), iK);
+	  
+	  // Compute boundary fluxes = F*(u-)'*n
+	  boundaryFluxC(uK, normalK, fluxes, static_cast<Mesh::Boundary>(nK), lambdaK, muK, rhoK);
+	  // Copy flux data into fStar
+	  for (int iS = 0; iS < nStates; ++iS) {
+	    fStar(iFQ, iS) = fluxes(iS);
+	  }
+	  
 	}
-	// Get material properties at this point
-	double lambdaK = p.lambda(mesh.efToQ(iFQ, iF), iK);
-	double lambdaN = p.lambda(mesh.efToQ(iFQ, nF), nK);
-	double muK = p.mu(mesh.efToQ(iFQ, iF), iK);
-	double muN = p.mu(mesh.efToQ(iFQ, nF), nK);
-	double rhoK = p.rho(mesh.efToQ(iFQ, iF), iK);
-	double rhoN = p.rho(mesh.efToQ(iFQ, nF), nK);
 	
-	// Compute fluxes = F*(u+,u-)'*n
-	numericalFluxC(uN, uK, normalK, fluxes,
-		       lambdaN, muN, rhoN, lambdaK, muK, rhoK);
-	// Copy flux data into fStar
-	for (int iS = 0; iS < nStates; ++iS) {
-	  fStar(iFQ, iS) = fluxes(iS);
+      }
+      else {
+	
+	auto nF = mesh.eToF(iF, iK);
+	
+	for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	  
+	  // Get all state variables at this point
+	  for (int iS = 0; iS < nStates; ++iS) {
+	    uK(iS) = uInterpF(iFQ, iS, iF, iK);
+	    uN(iS) = uInterpF(iFQ, iS, nF, nK);
+	  }
+	  // Get material properties at this point
+	  double lambdaK = p.lambda(mesh.efToQ(iFQ, iF), iK);
+	  double lambdaN = p.lambda(mesh.efToQ(iFQ, nF), nK);
+	  double muK = p.mu(mesh.efToQ(iFQ, iF), iK);
+	  double muN = p.mu(mesh.efToQ(iFQ, nF), nK);
+	  double rhoK = p.rho(mesh.efToQ(iFQ, iF), iK);
+	  double rhoN = p.rho(mesh.efToQ(iFQ, nF), nK);
+	  
+	  // Compute fluxes = F*(u+,u-)'*n
+	  numericalFluxC(uN, uK, normalK, fluxes,
+			 lambdaN, muN, rhoN, lambdaK, muK, rhoK);
+	  // Copy flux data into fStar
+	  for (int iS = 0; iS < nStates; ++iS) {
+	    fStar(iFQ, iS) = fluxes(iS);
+	  }
+	  
 	}
 	
       }
@@ -671,8 +729,6 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
       
     }
   }
-  
-  // TODO: is it faster to do matrix vector multiplication instead of having to reorder data into huge fc array?
   
   // residual += Kels(:, l)*fc_l(uInterpV)
   for (int l = 0; l < Mesh::DIM; ++l) {
@@ -743,13 +799,15 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
     for (int l = 0; l < dim; ++l) {
       for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
 	auto iK = mesh.mpibeToE(bK, iF);
-	auto nF = mesh.eToF(mpi.faceMap(iF), iK);
 	auto nK = mesh.eToE(mpi.faceMap(iF), iK);
 	
-	
-	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iFQ = 0; iFQ < nQF; ++iFQ) {
-	    interpolated(iFQ, iS, nF, nK, l) = toRecv(iFQ, iS, bK, l, iF);
+	if (nK >= 0) { // not a boundary condition
+	  auto nF = mesh.eToF(mpi.faceMap(iF), iK);
+	  
+	  for (int iS = 0; iS < nStates; ++iS) {
+	    for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	      interpolated(iFQ, iS, nF, nK, l) = toRecv(iFQ, iS, bK, l, iF);
+	    }
 	  }
 	}
       }
@@ -810,13 +868,16 @@ void Solver::mpiSendMaterials() {
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
     for (int bK = 0; bK < mesh.mpiNBElems(iF); ++bK) {
       auto iK = mesh.mpibeToE(bK, iF);
-      auto nF = mesh.eToF(mpi.faceMap(iF), iK);
       auto nK = mesh.eToE(mpi.faceMap(iF), iK);
       
-      for (int iFQ = 0; iFQ < nQF; ++iFQ) {
-	p.lambda(mesh.efToQ(iFQ,nF),nK) = toRecv(0, iFQ, bK, iF);
-	p.mu(mesh.efToQ(iFQ,nF),nK)     = toRecv(1, iFQ, bK, iF);
-	p.rho(mesh.efToQ(iFQ,nF),nK)    = toRecv(2, iFQ, bK, iF);
+      if (nK >= 0) { // not a boundary condition
+	auto nF = mesh.eToF(mpi.faceMap(iF), iK);
+	
+	for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	  p.lambda(mesh.efToQ(iFQ,nF),nK) = toRecv(0, iFQ, bK, iF);
+	  p.mu(mesh.efToQ(iFQ,nF),nK)     = toRecv(1, iFQ, bK, iF);
+	  p.rho(mesh.efToQ(iFQ,nF),nK)    = toRecv(2, iFQ, bK, iF);
+	}
       }
     }
   }
@@ -855,35 +916,57 @@ inline void Solver::fluxC(const darray& uK, darray& fluxes, double lambda, doubl
   }
   */
   
-  /*
-  // Fi2d for Navier-Stokes
-  double t1;
-  double t3;
-  double t5;
-  double t6;
-  double t7;
-  double t8;
-  double t11;
-  double t14;
-  fluxes[0] = uK[1];
-  t1 = std::pow(uK[1], 2.0);
-  t3 = 1.0 / uK[0];
-  t5 = uK[3];
-  t6 = 2.0 / 5.0 * t5;
-  t7 = uK[2];
-  t8 = t7 * t7;
-  t11 = (t1 + t8) * t3 / 5.0;
-  fluxes[1] = t1 * t3 + t6 - t11;
-  fluxes[2] = fluxes[0] * t7 * t3;
-  t14 = 7.0/5.0 * t5 - t11;
-  fluxes[3] = fluxes[0] * t14 * t3;
-  fluxes[4] = t7;
-  fluxes[5] = fluxes[2];
-  fluxes[6] = t8 * t3 + t6 - t11;
-  fluxes[7] = fluxes[4] * t14 * t3;
-  */
 }
 
+/**
+   Evaluates the convection numerical flux function at a boundary for this PDE 
+   for all states, dotted with teh normal, storing output in fluxes.
+*/
+void Solver::boundaryFluxC(const darray& uK, const darray& normalK, darray& fluxes, 
+			   Mesh::Boundary bc, double lambdaK, double muK, double rhoK) const {
+  
+  int nstrains = Mesh::DIM*(Mesh::DIM+1)/2;
+  darray tangentK{Mesh::DIM};
+  tangentK(0) = -normalK(1);
+  tangentK(1) = normalK(0);
+  fluxes.fill(0.0);
+  
+  switch(bc) {
+  case Mesh::Boundary::free:
+    // F(0:2) = -(vxI + Ixv)/2.0 * n
+    fluxes(0) = -uK(nstrains+0)*normalK(0);
+    fluxes(1) = -uK(nstrains+1)*normalK(1);
+    fluxes(2) = -uK(nstrains+1)/2.0*normalK(0) - uK(nstrains+0)/2.0*normalK(1);
+    // F(3:4) = 0
+    break;
+    
+  case Mesh::Boundary::absorbing:
+    double vpK = std::sqrt((lambdaK+2*muK)/rhoK);
+    double vsK = std::sqrt(muK/rhoK);
+    
+    // F(0:2) = -(vxI + Ixv)/2.0 * n
+    fluxes(0) = -uK(nstrains+0)*normalK(0);
+    fluxes(1) = -uK(nstrains+1)*normalK(1);
+    fluxes(2) = -uK(nstrains+1)/2.0*normalK(0) - uK(nstrains+0)/2.0*normalK(1);
+    
+    // Z = rho(vp nxn + vs n'xn')
+    double Z00 = rhoK*(vpK*normalK(0)*normalK(0) + vsK*tangentK(0)*tangentK(0));
+    double Z01 = rhoK*(vpK*normalK(0)*normalK(1) + vsK*tangentK(0)*tangentK(1));
+    double Z11 = rhoK*(vpK*normalK(1)*normalK(1) + vsK*tangentK(1)*tangentK(1));
+    double Z10 = Z01;
+    
+    // F(3:4) =  Z * v
+    fluxes(nstrains+0) = Z00*uK(nstrains+0) + Z01*uK(nstrains+1);
+    fluxes(nstrains+1) = Z10*uK(nstrains+0) + Z11*uK(nstrains+1);
+    break;
+    
+  default:
+    std::cerr << "FATAL ERROR: boundary condition is not a valid choice!" << std::endl;
+    exit(-1);
+    break;
+  }
+  
+}
 
 /**
    Evaluates the convection numerical flux function for this PDE for all states, 
@@ -932,143 +1015,6 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   }
   */
   
-  /*
-  // roe2d from Navier-Stokes
-  double t17;
-  double t46;
-  double t155;
-  double t23;
-  double t59;
-  double t35;
-  double t76;
-  double t47;
-  double t79;
-  double t49;
-  double t50;
-  double t51;
-  double t80;
-  double t2;
-  double t13;
-  double t81;
-  double t82;
-  double t22;
-  double t98;
-  double t99;
-  double t8;
-  double t85;
-  double t52;
-  double t55;
-  double t58;
-  double t37;
-  double t38;
-  double t39;
-  double t16;
-  double t69;
-  double t100;
-  double t90;
-  double t106;
-  double t105;
-  double t103;
-  double t102;
-  double t109;
-  double t108;
-  double t3;
-  double t5;
-  double t60;
-  double t61;
-  double t112;
-  double t111;
-  double t113;
-  double t94;
-  double t119;
-  double t122;
-  double t18;
-  double t19;
-  double t125;
-  double t41;
-  double t30;
-  double t97;
-  double t128;
-  double t130;
-  double t26;
-  double t64;
-  double t10;
-  double t134;
-  double t1;
-  double t137;
-  double t136;
-  double t143;
-  double t148;
-  t1 = uN[0];
-  t2 = uN[1];
-  t3 = 0.1e1 / t1;
-  t5 = normalK[0];
-  t8 = uN[2];
-  t10 = normalK[1];
-  t13 = 0.10e1 * t2 * t3 * t5 + 0.10e1 * t8 * t3 * t10;
-  t16 = uK[0];
-  t17 = uK[1];
-  t18 = 0.1e1 / t16;
-  t19 = t17 * t18;
-  t22 = uK[2];
-  t23 = t22 * t18;
-  t26 = 0.10e1 * t19 * t5 + 0.10e1 * t23 * t10;
-  t30 = std::sqrt(t1 * t18);
-  t35 = 0.100e1 * t30 * t2 * t3 + 0.10e1 * t19;
-  t37 = 0.10e1 * t30 + 0.10e1;
-  t38 = 0.1e1 / t37;
-  t39 = t35 * t38;
-  t41 = 0.10e1 * t39 * t5;
-  t46 = 0.100e1 * t30 * t8 * t3 + 0.10e1 * t23;
-  t47 = t46 * t38;
-  t49 = 0.10e1 * t47 * t10;
-  t50 = t41 + t49;
-  t51 = std::abs(t50);
-  t52 = t1 - t16;
-  t55 = uN[3];
-  t58 = 0.4e0 * t55;
-  t59 = t2 * t2;
-  t60 = t1 * t1;
-  t61 = 0.1e1 / t60;
-  t64 = t8 * t8;
-  t69 = 0.20e0 * t1 * (0.100e1 * t59 * t61 + 0.100e1 * t64 * t61);
-  t76 = uK[3];
-  t79 = 0.4e0 * t76;
-  t80 = t17 * t17;
-  t81 = t16 * t16;
-  t82 = 0.1e1 / t81;
-  t85 = t22 * t22;
-  t90 = 0.20e0 * t16 * (0.100e1 * t80 * t82 + 0.100e1 * t85 * t82);
-  t94 = 0.10e1 * t30 * (0.10e1 * t55 * t3 + 0.10e1 * (t58 - t69) * t3) + 0.10e1 * t76 * t18 + 0.10e1 * (t79 - t90) * t18;
-  t97 = t35 * t35;
-  t98 = t37 * t37;
-  t99 = 0.1e1 / t98;
-  t100 = t97 * t99;
-  t102 = t46 * t46;
-  t103 = t102 * t99;
-  t105 = 0.40e0 * t94 * t38 - 0.2000e0 * t100 - 0.2000e0 * t103;
-  t106 = std::sqrt(t105);
-  t108 = std::abs(t41 + t49 + t106);
-  t109 = 0.5e0 * t108;
-  t111 = std::abs(-t41 - t49 + t106);
-  t112 = 0.5e0 * t111;
-  t113 = t109 + t112 - t51;
-  t119 = t2 - t17;
-  t122 = t8 - t22;
-  t125 = 0.4e0 * (0.500e0 * t100 + 0.500e0 * t103) * t52 - 0.40e0 * t39 * t119 - 0.40e0 * t47 * t122 + t58 - t79;
-  t128 = t113 * t125 / t105;
-  t130 = t109 - t112;
-  t134 = -t50 * t52 + t119 * t5 + t122 * t10;
-  t136 = 0.1e1 / t106;
-  t137 = t130 * t134 * t136;
-  fluxes[0] = 0.5e0 * t1 * t13 + 0.5e0 * t16 * t26 - 0.5e0 * t51 * t52 - 0.5e0 * t128 - 0.5e0 * t137;
-  t143 = t58 - t69 + t79 - t90;
-  t148 = t128 + t137;
-  t155 = t130 * t125 * t136 + t113 * t134;
-  fluxes[1] = 0.5e0 * t2 * t13 + 0.5e0 * t17 * t26 + 0.5e0 * t5 * t143 - 0.5e0 * t51 * t119 - 0.50e0 * t148 * t35 * t38 - 0.5e0 * t155 * t5;
-  fluxes[2] = 0.5e0 * t8 * t13 + 0.5e0 * t22 * t26 + 0.5e0 * t10 * t143 - 0.5e0 * t51 * t122 - 0.50e0 * t148 * t46 * t38 - 0.5e0 * t155 * t10;
-  fluxes[3] = 0.5e0 * (0.14e1 * t55 - t69) * t13 + 0.5e0 * (0.14e1 * t76 - t90) * t26 - 0.5e0 * t51 * (t55 - t76) - 0.50e0 * t148 * t94 * t38 - 0.5e0 * t155 * t50;
-  */
 }
 
 /**

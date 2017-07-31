@@ -216,7 +216,7 @@ template <typename T> class array {
   // Element access.
   T& operator[](dgSize ix) const {
 #ifdef DEBUG
-    if (ix >= _size) {
+    if (ix < 0 || ix >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -224,7 +224,7 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0) const {
 #ifdef DEBUG
-    if (i0 >= _size) {
+    if (i0 < 0 || i0 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -232,7 +232,8 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0, dgSize i1) const {
 #ifdef DEBUG
-    if (i0+_strides[0]*i1 >= _size) {
+    if (i0+_strides[0]*i1 < 0 || 
+	i0+_strides[0]*i1 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -240,7 +241,8 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0, dgSize i1, dgSize i2) const {
 #ifdef DEBUG
-    if (i0+_strides[0]*i1+_strides[1]*i2 >= _size) {
+    if (i0+_strides[0]*i1+_strides[1]*i2 < 0 ||
+	i0+_strides[0]*i1+_strides[1]*i2 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -248,7 +250,8 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3) const {
 #ifdef DEBUG
-    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3 >= _size) {
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3 < 0 || 
+	i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -256,7 +259,8 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4) const {
 #ifdef DEBUG
-    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4 >= _size) {
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4 < 0 || 
+	i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -264,7 +268,8 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5) const {
 #ifdef DEBUG
-    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5 >= _size) {
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5 < 0 ||
+	i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif
@@ -272,7 +277,8 @@ template <typename T> class array {
   }
   T& operator()(dgSize i0, dgSize i1, dgSize i2, dgSize i3, dgSize i4, dgSize i5, dgSize i6) const {
 #ifdef DEBUG
-    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6 >= _size) {
+    if (i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6 < 0 ||
+	i0+_strides[0]*i1+_strides[1]*i2+_strides[2]*i3+_strides[3]*i4+_strides[4]*i5+_strides[5]*i6 >= _size) {
       std::cerr << "out of bounds!" << std::endl;
     }
 #endif

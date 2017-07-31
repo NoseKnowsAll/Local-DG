@@ -11,23 +11,27 @@
 class Source {
 public:
 
+  /** Allowable types of wavelets*/
   enum class Wavelet {
-    cos, ricker, rtm, null
+    cos, ricker, rtm, gaussian, spike, null
   };
   
   // Input parameters for specifying source
   typedef struct {
-    Wavelet type;
-    int halfSrc;
-    int timesteps;
-    double dt;
-    double maxF;
+    Wavelet type  = Wavelet::null;
+    int timesteps = 1;
+    double dt     = 1.0;
+    double vsMin  = 0.0;
+    double maxDx  = 1.0;
+    double maxF   = 0.0; // requested maxF
     darray srcPos;
     darray srcAmps;
   } Params;
   
   Wavelet type;   // type of wavelet
-  int halfSrc;    // timesteps when src != 0
+  double maxF;    // maximum frequency of source wavelet
+  double t0;      // initial time of source starting
+  int halfSrc;    // timesteps until t=0
   int nt;         // timesteps total
   darray wavelet; // wavelet amplitude in time
   darray weights; // spatial weights

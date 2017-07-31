@@ -9,14 +9,14 @@
 #include "MPIUtil.h"
 #include "io.h"
 
-/** Singular point in 3D */
+/** Singular point in 2D or 3D */
 class Point {
 public:
-  // initialize to 0
+  
   double x;
   double y;
   double z;
-
+  
   Point();
   Point(double _x, double _y);
   Point(double _x, double _y, double _z);
@@ -43,6 +43,11 @@ inline bool operator!=(const Point& lhs, const Point& rhs);
 class Mesh {
 public:
   
+  /** Boundary conditions */
+  enum class Boundary : int {
+    free = -1, absorbing = -2
+  };
+  
   /** Dimension of space we are modeling */ 
   const static int DIM = 2;
   /** Number of faces per element */
@@ -53,9 +58,9 @@ public:
   
   Mesh();
   Mesh(const MPIUtil& _mpi);
-  Mesh(int nx, int ny, int nz);
-  Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight);
-  Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi);
+  Mesh(int nx, int ny);
+  Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight);
+  Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi);
   Mesh(const Mesh& other);
   
   /** Initialize global nodes from solver's Chebyshev nodes */
@@ -153,6 +158,7 @@ public:
      For every element k, face i
      eToE(i, k) = element number of neighbor on ith face (includes ghost elements)
      3D: -x,+x,-y,+y,-z,+z directions
+     If eToE(i,k) < 0, then eToE(i,k) = boundary condition (BC) specified by enum
   */
   iarray eToE;
   /**

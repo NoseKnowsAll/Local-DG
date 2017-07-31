@@ -27,10 +27,10 @@ double Point::dist(const Point& other) const {
 }
 
 std::ostream& operator<<(std::ostream& out, const Point& p) {
-  return out << "{" << p.x << ", " << p.y  << "}";
+  return out << "{" << p.x << ", " << p.y  << ", " << p.z << "}";
 }
 inline bool operator==(const Point& lhs, const Point& rhs) {
-  return (lhs.x == rhs.x && lhs.y == rhs.y);
+  return (lhs.x == rhs.x && lhs.y == rhs.y && lhs.z == rhs.z);
 }
 inline bool operator!=(const Point& lhs, const Point& rhs) {
   return !(lhs == rhs);
@@ -43,14 +43,14 @@ inline bool operator!=(const Point& lhs, const Point& rhs) {
 
 
 /** Mesh Functionality */
-Mesh::Mesh() : Mesh{10,10,10} {}
+Mesh::Mesh() : Mesh{10,10} {}
 
-Mesh::Mesh(int nx, int ny, int nz) : Mesh{nx, ny, nz, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}, MPIUtil{}} {}
+Mesh::Mesh(int nx, int ny) : Mesh{nx, ny, Point{0.0, 0.0}, Point{1.0, 1.0}, MPIUtil{}} {}
 
-Mesh::Mesh(const MPIUtil& _mpi) : Mesh{10, 10, 10, Point{0.0, 0.0, 0.0}, Point{1.0, 1.0, 1.0}, _mpi} {}
+Mesh::Mesh(const MPIUtil& _mpi) : Mesh{10, 10, Point{0.0, 0.0}, Point{1.0, 1.0}, _mpi} {}
 
 /** Main constructor */
-Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi) :
+Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi) :
   mpi{_mpi},
   nElements{},
   nIElements{},
@@ -239,36 +239,47 @@ Mesh::Mesh(int nx, int ny, int nz, const Point& _botLeft, const Point& _topRight
       
       // Neighbor elements in -x,+x,-y,+y directions stored in faces
       if (face0) {
-	int ghostNum = iy;
-	eToE(0, eIndex) = faceOffsets(0)+ghostNum;
-	mpibeToE(ghostNum, 0) = eIndex;
+	eToE(0, eIndex) = static_cast<int>(Boundary::absorbing);
+	
+	//int ghostNum = iy;
+	//eToE(0, eIndex) = faceOffsets(0)+ghostNum;
+	//mpibeToE(ghostNum, 0) = eIndex;
       }
       else {
 	eToE(0, eIndex) = ixM+iy0;
       }
       
       if (face1) {
-	int ghostNum = iy;
-	eToE(1, eIndex) = faceOffsets(1)+ghostNum;
-	mpibeToE(ghostNum, 1) = eIndex;
+	// Apply absorbing boundary condition at +x boundary
+	eToE(1, eIndex) = static_cast<int>(Boundary::absorbing);
+	
+	//int ghostNum = iy;
+	//eToE(1, eIndex) = faceOffsets(1)+ghostNum;
+	//mpibeToE(ghostNum, 1) = eIndex;
       }
       else {
 	eToE(1, eIndex) = ixP+iy0;
       }
       
       if (face2) {
-	int ghostNum = ix;
-	eToE(2, eIndex) = faceOffsets(2)+ghostNum;
-	mpibeToE(ghostNum, 2) = eIndex;
+	// Apply absorbing boundary condition at -y boundary
+	eToE(2, eIndex) = static_cast<int>(Boundary::absorbing);
+	
+	//int ghostNum = ix;
+	//eToE(2, eIndex) = faceOffsets(2)+ghostNum;
+	//mpibeToE(ghostNum, 2) = eIndex;
       }
       else {
 	eToE(2, eIndex) = ix0+iyM;
       }
       
       if (face3) {
-	int ghostNum = ix;
-	eToE(3, eIndex) = faceOffsets(3)+ghostNum;
-	mpibeToE(ghostNum, 3) = eIndex;
+	// Apply free-surface boundary condition at +y boundary
+	eToE(3, eIndex) = static_cast<int>(Boundary::free);
+	
+	//int ghostNum = ix;
+	//eToE(3, eIndex) = faceOffsets(3)+ghostNum;
+	//mpibeToE(ghostNum, 3) = eIndex;
       }
       else {
 	eToE(3, eIndex) = ix0+iyP;

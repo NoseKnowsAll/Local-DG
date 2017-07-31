@@ -1,41 +1,91 @@
 #include "source.h"
 
-Source::Source() : Source{Params{}} {}
+Source::Source() {}
 
 Source::Source(const Params& in) :
   type{in.type},
+  maxF{},
+  t0{},
+  halfSrc{},
+  nt{},
   wavelet{},
-  halfSrc{in.halfSrc},
-  nt{std::max(in.timesteps, in.halfSrc+1)+in.halfSrc}
+  weights{}
 {
   init(in);
 }
 
 void Source::init(const Params& in) {
   
+  // Initialize source properties
   type = in.type;
-  halfSrc = in.halfSrc;
-  nt = std::max(in.timesteps, in.halfSrc+1)+in.halfSrc;
+  
+  double ptsPerLambdaMin = 4.0;
+  maxF = in.vsMin/(ptsPerLambdaMin*in.maxDx);
+  
+  if (in.maxF && in.maxF > maxF) {
+    std::cerr << "ERROR: Requested frequency is too high for model!\n";
+    std::cerr << "Can only handle source frequency up to " << maxF << " Hz" << std::endl;
+    exit(-1);
+  }
+  // Use model's actual maxF if no maxF is requested
+  if (in.maxF)
+    maxF = in.maxF;
+  
+  std::cout << "Using source with maximum frequency of " << maxF << " Hz" << std::endl;
+  
+  switch(type) {
+  case Wavelet::cos:
+    t0 = -3.0/maxF;
+    break;
+    
+  case Wavelet::ricker:
+    double fundF = maxF/2.65;
+    t0 = -1.0/fundF;
+    break;
+    
+  case Wavelet::rtm:
+    t0 = -3.0/maxF;
+    break;
+    
+  case Wavelet::spike:
+    t0 = 0.0;
+    break;
+    
+  case Wavelet::null:
+    t0 = 0.0;
+    break;
+    
+  default:
+    std::cerr << "ERROR: Asking for a bad source wavelet!" << std::endl;
+    break;
+  }
+  
+  // Allocate memory and initialize wavelet
+  halfSrc = static_cast<int>(std::floor(std::abs(t0)/in.dt));
+  nt = std::max(in.timesteps, halfSrc+1) + halfSrc;
   wavelet.realloc(rk4::nStages, nt);
   
   switch(type) {
   case Wavelet::cos:
-    initCos(in.dt, in.maxF);
+    initCos(in.dt, maxF);
     break;
+    
   case Wavelet::ricker:
-    double fundF = in.maxF/2.65;
     std::cerr << "ERROR: Ricker wavelet is not yet programmed!" << std::endl; 
     break;
+    
   case Wavelet::rtm:
-    double minF = 0.0; // Previously was [1, maxF]
-    initRtm(in.dt, minF, in.maxF);
+    double minF = 0.0;
+    initRtm(in.dt, minF, maxF);
     break;
+    
+  case Wavelet::spike:
+    wavelet(0) = 1.0;
+    break;
+    
   case Wavelet::null:
-    // To allow for no source term
-    halfSrc = 0;
-    nt = in.timesteps;
-    wavelet.realloc(rk4::nStages, nt);
     break;
+    
   default:
     std::cerr << "ERROR: Asking for a bad source wavelet!" << std::endl;
     break;
@@ -51,7 +101,6 @@ void Source::initCos(double dt, double maxF) {
   
   int nsrc = 2*halfSrc+1;
   double freq = 0.9*maxF;
-  // TODO: update so that wavelet has nstages involved
   
   // Initialize tapered wavelet at 0.9 max frequency
   darray totalSource{rk4::nStages, nsrc};
@@ -166,11 +215,11 @@ void Source::initRtm(double dt, double minF, double maxF) {
   int nsrc = 2*halfSrc+1;
   double t0 = -halfSrc*dt;
   double df = 0.1;
-  int nf = static_cast<int>(std::floor((maxF-minF)/df)+1);
+  int nf = static_cast<int>(std::ceil((maxF-minF)/df));
   
   // Loop over frequencies
   darray totalSource{rk4::nStages,nsrc};
-  for (int ifreq = 1; ifreq < nf; ++ifreq) {
+  for (int ifreq = 1; ifreq <= nf; ++ifreq) {
     double freq = minF+(ifreq-1)*df;
     double weightF = (0.5+0.5*std::cos(M_PI*(ifreq-nf/2)/(nf/2+1)));
     weightF = std::pow(weightF, 1.0/3.0);
@@ -188,7 +237,7 @@ void Source::initRtm(double dt, double minF, double maxF) {
   for (int it = 0; it < nsrc; ++it) {
     for (int is = 0; is < rk4::nStages; ++is) {
       double tOff = it - halfSrc + rk4::c[is];
-      double taper = 0.5+0.5*std::cos(M_PI*tOff/halfSrc);
+      double taper = 0.5+0.5*std::cos(M_PI*tOff/(halfSrc+1));
       totalSource(is,it) *= taper;
     }
   }

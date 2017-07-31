@@ -52,9 +52,9 @@ private:
   // For Elastic
   typedef struct {
     // Use reasonable constants when no input file
-    const double vpConst = std::sqrt((2.2+2*1.3)/1.2); //200.0;
-    const double vsConst = std::sqrt(1.3/1.2);//80.0;
-    const double rhoConst = 1.2;//1.0;
+    const double vpConst = 200.0;
+    const double vsConst = 80.0;
+    const double rhoConst = 1.2;
     double C;      // max velocity throughout domain
     darray lambda; // Lame's first parameter
     darray mu;     // Lame's second parameter
@@ -67,32 +67,17 @@ private:
     const double a[Mesh::DIM] = {1,2};
     const double eps = 1e-2;
   } physics; */
-
-  /* // For Navier-Stokes
-  typedef struct {
-    double pars[2]; // Reynolds number, Prandtl number
-    double gamma;   // adiabatic gas constant = ratio of specific heats = 1.4 in ideal gas
-    double M0;      // background Mach number
-    double rho0;    // background density
-    double V0;      // background velocity
-    double L;       // size of domain = pi*L
-    //double mu;      // dynamic shear viscosity
-    //double kappa;   // heat conductivity
-    double c0;      // background speed of sound
-    double p0;      // background pressure
-    double T0;      // background temperature
-    double tc;      // characteristic convective time
-    double R;       // ideal gas constant
-  } physics; */
   
   physics p;
   
   void precomputeLocalMatrices();
   void precomputeInterpMatrices();
   
-  void initTimeStepping(double dtSnap);
   void initMaterialProps();
   void initialCondition();
+  void initTimeStepping(double dtSnap);
+  void initSource(Source::Params& srcParams);
+  
   void trueSolution(darray& uTrue, double t) const;
   void computePressure(const darray& uInterpV, darray& pressure) const;
   
@@ -109,6 +94,8 @@ private:
   void convectDGFlux(const darray& uInterpF, darray& residual) const;
   void convectDGVolume(const darray& uInterpV, darray& residual) const;
   
+  void boundaryFluxC(const darray& uK, const darray& normalK, darray& fluxes, 
+		     Mesh::Boundary bc, double lambdaK, double muK, double rhoK) const;
   void numericalFluxC(const darray& uN, const darray& uK, 
 		      const darray& normalK, darray& fluxes,
 		      double lambdaN, double muN, double rhoN, 
@@ -118,7 +105,7 @@ private:
   
   double computeL2Error(const darray& uCurr, darray& uTrue) const;
   double computeL2Norm(const darray& uCurr) const;
-
+  
   double computeInfError(const darray& uCurr, darray& uTrue) const;
   double computeInfNorm(const darray& uCurr) const;
   

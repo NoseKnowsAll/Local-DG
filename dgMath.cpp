@@ -198,7 +198,11 @@ int gaussQuad1D(int p, darray& x, darray& w) {
   
   /* Compute eigenvalue decomposition of Jacobi matrix */
   x.realloc(1,n);
-  LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', n, toEig.data(), n, x.data());
+  int info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', n, toEig.data(), n, x.data());
+  if (info != 0) {
+    std::cerr << "ERROR: eigensystem calculation for quadrature points failed!" << std::endl;
+    exit(-1);
+  }
   
   /* Compute quadrature weights from eigenvectors */
   w.realloc(n);
