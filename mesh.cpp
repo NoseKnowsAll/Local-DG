@@ -117,6 +117,8 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   nGElements = 0;
   mpiNBElems.realloc(MPIUtil::N_FACES);
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    mpiNBElems(iF) = 0;
+    /* TODO: necessary for periodic BCs
     mpiNBElems(iF) = 1;
     for (int l = 0; l < MPIUtil::DIM; ++l) {
       if (l != iF/2) {
@@ -124,6 +126,7 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
       }
     }
     nGElements += mpiNBElems(iF);
+    */
   }
   
   nVertices  = (localNs[0]+1)*(localNs[1]+1);

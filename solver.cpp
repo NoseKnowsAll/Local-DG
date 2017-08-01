@@ -1,9 +1,5 @@
 #include "solver.h"
 
-// TODO: values start to reach +- infinity when wave hits bottom left with absorbing boundaries
-// TODO: NaNs almost instantly with nx = 15 vs 20, potentially in source term?
-// TODO: off-by-1 when initializing p.src.wavelet?
-
 /** Default constructor */
 Solver::Solver() : Solver{2, Source::Params{}, 0.1, 1.0, Mesh{}} { }
 
@@ -926,9 +922,6 @@ void Solver::boundaryFluxC(const darray& uK, const darray& normalK, darray& flux
 			   Mesh::Boundary bc, double lambdaK, double muK, double rhoK) const {
   
   int nstrains = Mesh::DIM*(Mesh::DIM+1)/2;
-  darray tangentK{Mesh::DIM};
-  tangentK(0) = -normalK(1);
-  tangentK(1) = normalK(0);
   fluxes.fill(0.0);
   
   switch(bc) {
@@ -949,10 +942,10 @@ void Solver::boundaryFluxC(const darray& uK, const darray& normalK, darray& flux
     fluxes(1) = -uK(nstrains+1)*normalK(1);
     fluxes(2) = -uK(nstrains+1)/2.0*normalK(0) - uK(nstrains+0)/2.0*normalK(1);
     
-    // Z = rho(vp nxn + vs n'xn')
-    double Z00 = rhoK*(vpK*normalK(0)*normalK(0) + vsK*tangentK(0)*tangentK(0));
-    double Z01 = rhoK*(vpK*normalK(0)*normalK(1) + vsK*tangentK(0)*tangentK(1));
-    double Z11 = rhoK*(vpK*normalK(1)*normalK(1) + vsK*tangentK(1)*tangentK(1));
+    // Z = rho(vp nxn + vs (1-nxn))
+    double Z00 = rhoK*(vpK*normalK(0)*normalK(0) + vsK*(1-normalK(0)*normalK(0)));
+    double Z01 = rhoK*(vpK*normalK(0)*normalK(1) - vsK*(normalK(0)*normalK(1)));
+    double Z11 = rhoK*(vpK*normalK(1)*normalK(1) + vsK*(1-normalK(1)*normalK(1)));
     double Z10 = Z01;
     
     // F(3:4) =  Z * v
@@ -988,7 +981,7 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
   double vpK = std::sqrt((lambdaK + 2*muK)/rhoK);
   double vpN = std::sqrt((lambdaN + 2*muN)/rhoN);
   //double C = (vpK+vpN)/2.0;
-  double C = std::max(vpK, vpN); // TODO: is this better?
+  double C = std::max(vpK, vpN);
   
   fluxes.fill(0.0);
   for (int iS = 0; iS < nStates; ++iS) {
