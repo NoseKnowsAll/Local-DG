@@ -155,7 +155,7 @@ void Solver::precomputeLocalMatrices() {
       
       // localJPI = Jk*Ps*Interp
       switch(s) {
-      case 0:
+      case 0: {
 	// P == I
 	for (int iN = 0; iN < dofs; ++iN) {
 	  for (int iQ = 0; iQ < nQV; ++iQ) {
@@ -163,7 +163,8 @@ void Solver::precomputeLocalMatrices() {
 	  }
 	}
 	break;
-      case 1:
+      }
+      case 1: {
 	// P == rho*I
 	for (int iN = 0; iN < dofs; ++iN) {
 	  for (int iQ = 0; iQ < nQV; ++iQ) {
@@ -171,6 +172,7 @@ void Solver::precomputeLocalMatrices() {
 	  }
 	}
 	break;
+      }
       }
       
       // Mel = Interp'*W*Jk*Ps*Interp
@@ -925,15 +927,15 @@ void Solver::boundaryFluxC(const darray& uK, const darray& normalK, darray& flux
   fluxes.fill(0.0);
   
   switch(bc) {
-  case Mesh::Boundary::free:
+  case Mesh::Boundary::free: {
     // F(0:2) = -(vxI + Ixv)/2.0 * n
     fluxes(0) = -uK(nstrains+0)*normalK(0);
     fluxes(1) = -uK(nstrains+1)*normalK(1);
     fluxes(2) = -uK(nstrains+1)/2.0*normalK(0) - uK(nstrains+0)/2.0*normalK(1);
     // F(3:4) = 0
     break;
-    
-  case Mesh::Boundary::absorbing:
+  }
+  case Mesh::Boundary::absorbing: {
     double vpK = std::sqrt((lambdaK+2*muK)/rhoK);
     double vsK = std::sqrt(muK/rhoK);
     
@@ -952,11 +954,12 @@ void Solver::boundaryFluxC(const darray& uK, const darray& normalK, darray& flux
     fluxes(nstrains+0) = Z00*uK(nstrains+0) + Z01*uK(nstrains+1);
     fluxes(nstrains+1) = Z10*uK(nstrains+0) + Z11*uK(nstrains+1);
     break;
-    
-  default:
+  }
+  default: {
     std::cerr << "FATAL ERROR: boundary condition is not a valid choice!" << std::endl;
     exit(-1);
     break;
+  }
   }
   
 }

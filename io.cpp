@@ -60,13 +60,13 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
       std::cerr << "FATAL WARNING: This solver currently only accepts meshes with sequential element IDs!" << std::endl;
       return false;
     }
-
+    
     // Read in the actual vertices that this element connects
     for (int i = 0; i < n_vertices; ++i) {
       mshFile >> eToV(i, k);
     }
   }
-
+  
   return true;
   
 }
@@ -93,18 +93,22 @@ bool initXYZVFile(const std::string& filename, int dim, const std::string& value
   }
 
   switch (dim) {
-  case 1:
+  case 1: {
     outFile << "X, ";
     break;
-  case 2:
+  }
+  case 2: {
     outFile << "X, Y, ";
     break;
-  case 3:
+  }
+  case 3: {
     outFile << "X, Y, Z, ";
     break;
-  default:
+  }
+  default: {
     outFile << "X3D, Y3D, Z3D, ";
     break;
+  }
   }
   
   for (int iS = 0; iS < nStates-1; ++iS) {

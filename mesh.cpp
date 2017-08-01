@@ -81,7 +81,53 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   efToN{},
   efToQ{}
 {
+  defaultSquare(nx, ny);
+  // */
+  // TODO: work on reading mesh
+  //readMesh("test.msh", DIM, N_VERTICES,
+  //	   nVertices, nElements, vertices, eToV);
+  //vertices.realloc(DIM, nVertices);
+  //eToV.realloc(N_VERTICES, nElements);
+  //beToE.realloc(nBElements);
+  //ieToE.realloc(nIElements);
+}
 
+Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
+  mpi{_mpi},
+  nElements{},
+  nIElements{},
+  nBElements{},
+  nGElements{},
+  mpiNBElems{},
+  nVertices{},
+  botLeft{},
+  topRight{},
+  minDX{},
+  minDY{},
+  minDZ{},
+  order{},
+  nNodes{},
+  nFNodes{},
+  nFQNodes{},
+  globalCoords{},
+  globalQuads{},
+  vertices{},
+  eToV{},
+  beToE{},
+  ieToE{},
+  mpibeToE{},
+  eToE{},
+  eToF{},
+  normals{},
+  tempMapping{},
+  efToN{},
+  efToQ{}
+{
+  
+}
+
+void Mesh::defaultSquare(int nx, int ny) {
+  
   // Initialize my position in MPI topology
   int globalNs[MPIUtil::DIM] = {nx, ny};
   int localNs[MPIUtil::DIM];
@@ -118,7 +164,7 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   mpiNBElems.realloc(MPIUtil::N_FACES);
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
     mpiNBElems(iF) = 0;
-    /* TODO: necessary for periodic BCs
+    /* necessary for periodic BCs
     mpiNBElems(iF) = 1;
     for (int l = 0; l < MPIUtil::DIM; ++l) {
       if (l != iF/2) {
@@ -185,15 +231,6 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
       }
     }
   }
-  
-  // */
-  // TODO: work on reading mesh
-  //readMesh("test.msh", DIM, N_VERTICES,
-  //	   nVertices, nElements, vertices, eToV);
-  //vertices.realloc(DIM, nVertices);
-  //eToV.realloc(N_VERTICES, nElements);
-  //beToE.realloc(nBElements);
-  //ieToE.realloc(nIElements);
   
   // Initialize element-to-face arrays and MPI boundary element map
   eToE.realloc(N_FACES, nElements);

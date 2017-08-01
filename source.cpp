@@ -34,30 +34,31 @@ void Source::init(const Params& in) {
   std::cout << "Using source with maximum frequency of " << maxF << " Hz" << std::endl;
   
   switch(type) {
-  case Wavelet::cos:
+  case Wavelet::cos: {
     t0 = -3.0/maxF;
     break;
-    
-  case Wavelet::ricker:
+  }
+  case Wavelet::ricker: {
     double fundF = maxF/2.65;
     t0 = -1.0/fundF;
     break;
-    
-  case Wavelet::rtm:
+  }
+  case Wavelet::rtm: {
     t0 = -3.0/maxF;
     break;
-    
-  case Wavelet::spike:
+  }
+  case Wavelet::spike: {
     t0 = 0.0;
     break;
-    
-  case Wavelet::null:
+  }
+  case Wavelet::null: {
     t0 = 0.0;
     break;
-    
-  default:
+  }
+  default: {
     std::cerr << "ERROR: Asking for a bad source wavelet!" << std::endl;
     break;
+  }
   }
   
   // Allocate memory and initialize wavelet
@@ -66,29 +67,30 @@ void Source::init(const Params& in) {
   wavelet.realloc(rk4::nStages, nt);
   
   switch(type) {
-  case Wavelet::cos:
+  case Wavelet::cos: {
     initCos(in.dt, maxF);
     break;
-    
-  case Wavelet::ricker:
+  }
+  case Wavelet::ricker: {
     std::cerr << "ERROR: Ricker wavelet is not yet programmed!" << std::endl; 
     break;
-    
-  case Wavelet::rtm:
+  }
+  case Wavelet::rtm: {
     double minF = 0.0;
     initRtm(in.dt, minF, maxF);
     break;
-    
-  case Wavelet::spike:
+  }
+  case Wavelet::spike: {
     wavelet(0) = 1.0;
     break;
-    
-  case Wavelet::null:
+  }
+  case Wavelet::null: {
     break;
-    
-  default:
+  }
+  default: {
     std::cerr << "ERROR: Asking for a bad source wavelet!" << std::endl;
     break;
+  }
   }
   
 }

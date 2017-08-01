@@ -63,6 +63,11 @@ public:
   Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi);
   Mesh(const Mesh& other);
   
+  Mesh(const std::string& filename, const MPIUtil& _mpi);
+  
+  /** Initialize mappings assuming evenly distributed square */
+  void defaultSquare(int nx, int ny);
+  
   /** Initialize global nodes from solver's Chebyshev nodes */
   void setupNodes(const darray& chebyNodes, int _order);
   
