@@ -284,7 +284,7 @@ void Source::definePositions(const Params& in, const Mesh& mesh, const darray& x
 	// Compute distance from quadrature point to source location
 	double dist = 0.0;
 	for (int l = 0; l < Mesh::DIM; ++l) {
-	  coord(l) = mesh.tempMapping(0,l,iK)*xQV(l,iQ)+mesh.tempMapping(1,l,iK);
+	  coord(l) = mesh.tempMapping(l,0,iK)*xQV(l,iQ)+mesh.tempMapping(l,1,iK);
 	  dist += std::pow(coord(l) - in.srcPos(l,i),2.0);
 	}
 	

@@ -20,10 +20,16 @@ int main(int argc, char *argv[]) {
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing mesh..." << std::endl;
   }
+#define USING_MESH 1
+#ifdef USING_MESH
+  std::string mshFile{"/home/mfranco/scratch/2017/meshes/square.msh"};
+  Mesh mesh{mshFile, mpi};
+#else
   Point botLeft{50.0, 25.0};
   Point topRight{200.0, 100.0};
   int nx = 15;
   Mesh mesh{2*nx, nx, botLeft, topRight, mpi};
+#endif
   
   // Initialize sources
   int nsrcs = 1;
@@ -46,7 +52,11 @@ int main(int argc, char *argv[]) {
   if (mpi.rank == mpi.ROOT) {
     std::cout << "order = " << order << std::endl;
     std::cout << "tf = " << tf << std::endl;
+#ifdef USING_MESH
+    std::cout << "Loaded mesh = " << mshFile << std::endl;
+#else
     std::cout << "nx = " << nx << std::endl;
+#endif
   }
   Solver dgSolver{order, srcParams, dtSnap, tf, mesh};
   

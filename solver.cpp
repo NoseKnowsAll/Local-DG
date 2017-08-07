@@ -25,6 +25,8 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   InterpF{},
   InterpV{},
   InterpW{},
+  InterpK{},
+  InterpKQ{},
   u{},
   p{}
 {
@@ -32,13 +34,13 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   // Initialize nodes within elements
   chebyshev2D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2);
-  mesh.setupNodes(refNodes, order);
-  mpi.initDatatype(mesh.nFQNodes);
-  mpi.initFaces(Mesh::N_FACES);
   
   // Compute interpolation matrices
-  precomputeInterpMatrices(); // sets nQV, xQV
-  mesh.setupQuads(xQV, nQV);
+  precomputeInterpMatrices(); // sets nQV, xQV, Interp*
+  mesh.setupNodes(InterpK, order);
+  mesh.setupQuads(InterpKQ, nQV);
+  mpi.initDatatype(mesh.nFQNodes);
+  mpi.initFaces(Mesh::N_FACES);
   
   // Initialize physics
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
@@ -77,12 +79,17 @@ void Solver::precomputeInterpMatrices() {
   interpolationMatrix1D(chebyF, xQF, InterpF);
   
   // 2D interpolation matrix for use on elements
-  darray chebyV;
-  chebyshev2D(order, chebyV);
   darray wQV;
   nQV = gaussQuad2D(2*order, xQV, wQV);
+  interpolationMatrix2D(refNodes, xQV, InterpV);
   
-  interpolationMatrix2D(chebyV, xQV, InterpV);
+  // 2D interpolation for use with mappings onto volume nodes
+  darray chebyK;
+  chebyshev2D(1, chebyK);
+  interpolationMatrix2D(chebyK, refNodes, InterpK);
+
+  // 2D interpolation for use with mappings onto volume quadrature pts
+  interpolationMatrix2D(chebyK, xQV, InterpKQ);
   
 }
 
@@ -148,9 +155,9 @@ void Solver::precomputeLocalMatrices() {
     // Compute Jacobian = det(Jacobian(Tk))
     double Jacobian = 1.0;
     for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(0,l,iK);
+      Jacobian *= mesh.tempMapping(l,0,iK);
     }
-      
+    
     for (int s = 0; s < storage; ++s) {
       
       // localJPI = Jk*Ps*Interp
@@ -190,8 +197,8 @@ void Solver::precomputeLocalMatrices() {
   darray alpha{Mesh::DIM};
   double Jacobian = 1.0;
   for (int l = 0; l < Mesh::DIM; ++l) {
-    alpha(l) = mesh.tempMapping(0,l,0);
-    Jacobian *= mesh.tempMapping(0,l,0);
+    alpha(l) = mesh.tempMapping(l,0,0);
+    Jacobian *= mesh.tempMapping(l,0,0);
   }
   
   // Initialize K matrices = dx_l(phi_i)*weights
@@ -554,7 +561,7 @@ void Solver::sourceVolume(darray& residual, int istage, int iTime) const {
     // Compute Jacobian = det(Jacobian(Tk))
     double Jacobian = 1.0;
     for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(0,l,iK);
+      Jacobian *= mesh.tempMapping(l,0,iK);
     }
     
     // Compute localJWI = J*W*Interp
@@ -1076,7 +1083,7 @@ double Solver::computeL2Norm(const darray& uCurr) const {
     // Compute Jacobian = det(Jacobian(Tk))
     double Jacobian = 1.0;
     for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(0,l,iK);
+      Jacobian *= mesh.tempMapping(l,0,iK);
     }
     
     // JIloc = Jk*Interp

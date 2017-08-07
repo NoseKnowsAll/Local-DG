@@ -43,9 +43,11 @@ private:
   darray Kels;
   darray KelsF;
   
-  darray InterpF;
-  darray InterpV;
-  darray InterpW;
+  darray InterpF;  // Interpolates faces nodes to face Gaussian pts
+  darray InterpV;  // Interpolates volume nodes to volume Gaussian pts
+  darray InterpW;  // InterpV*Weights
+  darray InterpK;  // Interpolates bilinear map Tk to volume nodes
+  darray InterpKQ; // Interpolates bilinear map Tk to volume quadrature pts
   
   darray u;
   

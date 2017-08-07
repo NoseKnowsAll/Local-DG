@@ -47,7 +47,7 @@ private:
   void initRtm(double dt, double minF, double maxF);
   
   /** Weight in gaussian of which to penalize distance from sources */
-  const static double DWEIGHT = 0.4;
+  constexpr static double DWEIGHT = 0.4;
   
 };
 

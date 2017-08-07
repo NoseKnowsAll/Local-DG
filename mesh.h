@@ -1,9 +1,17 @@
 #ifndef MESH_H__
 #define MESH_H__
 
+#ifdef __INTEL_COMPILER
+#include <mkl_lapacke.h>
+#include <mkl.h>
+#else
+#include <cblas.h>
+#include <lapacke.h>
+#endif
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <set>
 
 #include "array.h"
 #include "MPIUtil.h"
@@ -68,11 +76,11 @@ public:
   /** Initialize mappings assuming evenly distributed square */
   void defaultSquare(int nx, int ny);
   
-  /** Initialize global nodes from solver's Chebyshev nodes */
-  void setupNodes(const darray& chebyNodes, int _order);
+  /** Initialize global nodes from bilinear mapping of reference nodes */
+  void setupNodes(const darray& InterpK, int _order);
   
-  /** Initialize global quadrature points from solver's reference quadrature points */
-  void setupQuads(const darray& xQV, int nQV);
+  /** Initialize global quadrature points from bilinear mappings of reference quadrature points */
+  void setupQuads(const darray& InterpKQ, int nQV);
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
@@ -128,7 +136,11 @@ public:
   // End of variables initialized after solver is created
   ///////////////////////////////////////
   
-  /** Global vector of 3D vertices that form corners of elements */
+  /**
+     Global vector of 2D vertices that form corners of elements:
+     For every dimension l, vertex i
+     vertices(l, i) = x_l of vertex i
+  */
   darray vertices;
   
   /**
@@ -179,9 +191,15 @@ public:
   */
   darray normals;
   /**
+     bilinear mapping Tk at each element:
+     For every element k, dimension l
+     x_l = sum(bilinearMapping(l,:,k)*phi(xi_l,:))
+  */
+  darray bilinearMapping;
+  /**
      temporary mapping Tk at each element:
      For every element k, dimension l
-     x_l = tempMapping(0,l,k)*xi_l + tempMapping(1,l,k)
+     x_l = tempMapping(l,0,k)*xi_l + tempMapping(l,1,k)
   */
   darray tempMapping;
   

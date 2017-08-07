@@ -77,19 +77,12 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   eToE{},
   eToF{},
   normals{},
+  bilinearMapping{},
   tempMapping{},
   efToN{},
   efToQ{}
 {
   defaultSquare(nx, ny);
-  // */
-  // TODO: work on reading mesh
-  //readMesh("test.msh", DIM, N_VERTICES,
-  //	   nVertices, nElements, vertices, eToV);
-  //vertices.realloc(DIM, nVertices);
-  //eToV.realloc(N_VERTICES, nElements);
-  //beToE.realloc(nBElements);
-  //ieToE.realloc(nIElements);
 }
 
 Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
@@ -119,10 +112,142 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   eToE{},
   eToF{},
   normals{},
+  bilinearMapping{},
   tempMapping{},
   efToN{},
   efToQ{}
 {
+
+  // Read mesh from file
+  readMesh(filename, DIM, N_VERTICES,
+  	   nVertices, nElements, vertices, eToV);
+
+  // TODO: make this MPI compatible
+  nIElements = nElements;
+  nBElements = 0;
+  nGElements = 0;
+  mpiNBElems.realloc(MPIUtil::N_FACES);
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+    mpiNBElems(iF) = 0;
+  }
+  beToE.realloc(nBElements);
+  ieToE.realloc(nIElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    ieToE(iK) = iK;
+  }
+  //mpibeToE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
+  
+  // TODO: how to calculate minDX/Y/Z with mapped squares
+  
+  // sequential O(n^2) method for determining eToE/eToF
+  // Careful: assumes face iF is line segment between vertex iF and iF+1
+  eToE.realloc(N_FACES, nElements);
+  eToF.realloc(N_FACES, nElements);
+  barray facesSeen{N_FACES, nElements};
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      facesSeen(iF,iK) = false;
+    }
+  }
+  
+  // Loop over all of the element/faces
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      if (facesSeen(iF,iK)) {
+	continue;
+      }
+      std::set<int> iFace;
+      iFace.insert(eToV(iF,iK));
+      iFace.insert(eToV((iF+1 == N_FACES ? 0 : iF+1),iK));
+      
+      bool boundary = true;
+      
+      // Compare with all of the element/faces
+      for (int nK = 0; nK < nElements; ++nK) {
+	for (int nF = 0; nF < N_FACES; ++nF) {
+	  if (facesSeen(nF,nK))
+	    continue;
+	  
+	  std::set<int> nFace;
+	  nFace.insert(eToV(nF,nK));
+	  nFace.insert(eToV((nF+1 == N_FACES ? 0 : nF+1),nK));
+	  if (iFace == nFace) {
+	    // Link both elements
+	    eToE(iF,iK) = nK;
+	    eToE(nF,nK) = iK;
+	    
+	    eToF(iF,iK) = nF;
+	    eToF(nF,nK) = iF;
+	    
+	    facesSeen(iF,iK) = true;
+	    facesSeen(nF,nK) = true;
+	    
+	    boundary = false;
+	    break;
+	  }
+	  
+	}
+	if (!boundary)
+	  break;
+      }
+      
+      if (boundary) {
+	
+	double y1 = vertices(1, eToV(iF, iK));
+	double y2 = vertices(1, eToV((iF+1 == N_FACES ? 0 : iF+1), iK));
+	if (y1 == 0.0 && y2 == 0.0) {
+	  // north face has free surface condition
+	  eToE(iF,iK) = static_cast<int>(Boundary::free);
+	}
+	else {
+	  // all other sides have absorbing BC
+	  eToE(iF,iK) = static_cast<int>(Boundary::absorbing);
+	}
+	eToF(iF,iK) = -1; // not to be accessed
+	facesSeen(iF,iK) = true;
+	
+      }
+      
+    }
+  }
+  
+  // Initialize bilinear mappings
+  int mapOrder = 1;
+  int mapDofs = std::pow((mapOrder+1), DIM);
+  if (mapDofs != nVertices) { // better be exactly equal to number of vertices
+    std::cerr << "FATAL ERROR: trying to initialize with a map with too high an order!" << std::endl;
+    exit(-1);
+  }
+  
+  bilinearMapping.realloc(nVertices, DIM, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int l = 0; l < DIM; ++l) {
+      for (int iV = 0; iV < nVertices; ++iV) {
+	bilinearMapping(iV,l,iK) = vertices(l,eToV(iV,iK)); // TODO - is this correct?
+      }
+    }
+  }
+  
+  // Initialize normals - assumes input 2D mesh is ordered counter-clockwise
+  normals.realloc(DIM, N_FACES, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      int a = iF;
+      int b = (iF+1 == N_FACES ? 0 : iF+1);
+      
+      double ABx = vertices(0,eToV(b,iK)) - vertices(0,eToV(a,iK));
+      double ABy = vertices(1,eToV(b,iK)) - vertices(1,eToV(a,iK));
+      normals(0, iF, iK) = ABy;
+      normals(1, iF, iK) = -ABx;
+    }
+  }
+  
+  // TODO: with isoparametric mapping, normals should be at quadrature points
+  // look in 3dg/src/dgmodel.cpp/precomp_edgeJnn for how Per sets up 3dg's nns = normals(Mesh::DIM, nQF, N_FACES, nElements)
+  // called by 3dg/src/dgassemble.cpp/Tassemble::el_setup
+  
+  
+  
   
 }
 
@@ -357,15 +482,15 @@ void Mesh::defaultSquare(int nx, int ny) {
   }
   
   // Temporary bad mapping, 0 == scaling factor, 1 == translation
-  tempMapping.realloc(2, DIM, nElements);
-  for (int k = 0; k < nElements; ++k) {
+  tempMapping.realloc(DIM, 2, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
     for (int l = 0; l < DIM; ++l) {
-      double x0 = vertices(l, eToV(0,k));
-      double x1 = vertices(l, eToV(N_VERTICES-1,k));
+      double x0 = vertices(l, eToV(0,iK));
+      double x1 = vertices(l, eToV(N_VERTICES-1,iK));
       double dx = x1 - x0;
       
-      tempMapping(0, l, k) = dx/2.0;
-      tempMapping(1, l, k) = x0+dx/2.0;
+      tempMapping(0,l,iK) = dx/2.0;
+      tempMapping(1,l,iK) = x0+dx/2.0;
     }
   }
   
@@ -399,26 +524,38 @@ Mesh::Mesh(const Mesh& other) :
   eToE{other.eToE},
   eToF{other.eToF},
   normals{other.normals},
+  bilinearMapping{other.bilinearMapping},
   tempMapping{other.tempMapping},
   efToN{other.efToN},
   efToQ{other.efToQ}
 { }
 
-/** Initialize global nodes from solver's Chebyshev nodes */
-void Mesh::setupNodes(const darray& chebyNodes, int _order) {
+/** Initialize global nodes from bilinear mapping of reference nodes */
+void Mesh::setupNodes(const darray& InterpK, int _order) {
   
   order = _order;
-  nNodes = chebyNodes.size(1)*chebyNodes.size(2);
-  darray refNodes{chebyNodes, DIM, nNodes}; 
+  nNodes = InterpK.size(0);
   
-  // Scales and translates Chebyshev nodes into each element
+  darray xl{nNodes};
+  // Scales and translates Chebyshev nodes into each element by applying bilinear mapping
   globalCoords.realloc(DIM, nNodes, nElements);
-  for (int k = 0; k < nElements; ++k) {
-    for (int iN = 0; iN < nNodes; ++iN) {
-      for (int l = 0; l < DIM; ++l) {
-	globalCoords(l,iN,k) = tempMapping(0,l,k)*refNodes(l,iN)+tempMapping(1,l,k);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int l = 0; l < DIM; ++l) {
+      // coord_l = InterpK*bilinear(:,l,iK)
+      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		  nNodes,nVertices,1, 1.0, InterpK.data(), nNodes,
+		  &bilinearMapping(0,l,iK), nVertices, 0.0, xl.data(), nNodes);
+      for (int iN = 0; iN < nNodes; ++iN) {
+	globalCoords(l,iN,iK) = xl(iN);
       }
     }
+    
+    // Previous mapping
+    //for (int iN = 0; iN < nNodes; ++iN) {
+    //  for (int l = 0; l < DIM; ++l) {
+    //    globalCoords(l,iN,iK) = tempMapping(0,l,iK)*refNodes(l,iN)+tempMapping(1,l,iK);
+    //  }
+    //}
   }
   
   // nodal points per face
@@ -431,10 +568,24 @@ void Mesh::setupNodes(const darray& chebyNodes, int _order) {
   
 }
 
-/** Initialize global quadrature points from solver's reference quadrature points */
-void Mesh::setupQuads(const darray& xQV, int nQV) {
+/** Initialize global quadrature points from bilinear mappings of reference quadrature points */
+void Mesh::setupQuads(const darray& InterpKQ, int nQV) {
   
   globalQuads.realloc(DIM, nQV, nElements);
+  darray xl{nQV};
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int l = 0; l < DIM; ++l) {
+      // coord_l = InterpKQ*bilinear(:,l,iK)
+      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		  nQV,nVertices,1, 1.0, InterpKQ.data(), nQV,
+		  &bilinearMapping(0,l,iK), nVertices, 0.0, xl.data(), nQV);
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	globalQuads(l,iQ,iK) = xl(iQ);
+      }
+    }
+  }
+
+  /* Previous mapping
   for (int iK = 0; iK < nElements; ++iK) {
     for (int iQ = 0; iQ < nQV; ++iQ) {
       for (int l = 0; l < DIM; ++l) {
@@ -442,6 +593,7 @@ void Mesh::setupQuads(const darray& xQV, int nQV) {
       }
     }
   }
+  */
   
 }
 
