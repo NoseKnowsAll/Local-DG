@@ -60,9 +60,8 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   nVertices{},
   botLeft{_botLeft},
   topRight{_topRight},
-  minDX{},
-  minDY{},
-  minDZ{},
+  dxMin{},
+  dxMax{},
   order{},
   nNodes{},
   nFNodes{},
@@ -95,9 +94,8 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   nVertices{},
   botLeft{},
   topRight{},
-  minDX{},
-  minDY{},
-  minDZ{},
+  dxMin{},
+  dxMax{},
   order{},
   nNodes{},
   nFNodes{},
@@ -121,7 +119,7 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   // Read mesh from file
   readMesh(filename, DIM, N_VERTICES,
   	   nVertices, nElements, vertices, eToV);
-
+  
   // TODO: make this MPI compatible
   nIElements = nElements;
   nBElements = 0;
@@ -135,9 +133,7 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   for (int iK = 0; iK < nElements; ++iK) {
     ieToE(iK) = iK;
   }
-  //mpibeToE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
-  
-  // TODO: how to calculate minDX/Y/Z with mapped squares
+  mpibeToE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
   
   // sequential O(n^2) method for determining eToE/eToF
   // Careful: assumes face iF is line segment between vertex iF and iF+1
@@ -155,7 +151,10 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
     for (int iF = 0; iF < N_FACES; ++iF) {
       if (facesSeen(iF,iK)) {
 	continue;
+      } else {
+	facesSeen(iF,iK) = true;
       }
+      // Visiting this current element/face
       std::set<int> iFace;
       iFace.insert(eToV(iF,iK));
       iFace.insert(eToV((iF+1 == N_FACES ? 0 : iF+1),iK));
@@ -179,7 +178,6 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
 	    eToF(iF,iK) = nF;
 	    eToF(nF,nK) = iF;
 	    
-	    facesSeen(iF,iK) = true;
 	    facesSeen(nF,nK) = true;
 	    
 	    boundary = false;
@@ -204,7 +202,6 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
 	  eToE(iF,iK) = static_cast<int>(Boundary::absorbing);
 	}
 	eToF(iF,iK) = -1; // not to be accessed
-	facesSeen(iF,iK) = true;
 	
       }
       
@@ -213,22 +210,26 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   
   // Initialize bilinear mappings
   int mapOrder = 1;
-  int mapDofs = std::pow((mapOrder+1), DIM);
-  if (mapDofs != nVertices) { // better be exactly equal to number of vertices
+  int mapDofs = static_cast<int>(std::pow((mapOrder+1), DIM));
+  if (mapDofs != N_VERTICES) { // better be exactly equal to number of vertices
     std::cerr << "FATAL ERROR: trying to initialize with a map with too high an order!" << std::endl;
     exit(-1);
   }
   
-  bilinearMapping.realloc(nVertices, DIM, nElements);
+  bilinearMapping.realloc(N_VERTICES, DIM, nElements);
   for (int iK = 0; iK < nElements; ++iK) {
     for (int l = 0; l < DIM; ++l) {
-      for (int iV = 0; iV < nVertices; ++iV) {
+      for (int iV = 0; iV < N_VERTICES; ++iV) {
 	bilinearMapping(iV,l,iK) = vertices(l,eToV(iV,iK)); // TODO - is this correct?
       }
     }
   }
   
   // Initialize normals - assumes input 2D mesh is ordered counter-clockwise
+  // Simultaneously computes dxMin/dxMax
+  dxMin = std::numeric_limits<double>::max();
+  dxMax = 0.0;
+  
   normals.realloc(DIM, N_FACES, nElements);
   for (int iK = 0; iK < nElements; ++iK) {
     for (int iF = 0; iF < N_FACES; ++iF) {
@@ -237,8 +238,15 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
       
       double ABx = vertices(0,eToV(b,iK)) - vertices(0,eToV(a,iK));
       double ABy = vertices(1,eToV(b,iK)) - vertices(1,eToV(a,iK));
-      normals(0, iF, iK) = ABy;
-      normals(1, iF, iK) = -ABx;
+      double length = std::sqrt(ABx*ABx + ABy*ABy);
+      normals(0, iF, iK) = ABy/length;
+      normals(1, iF, iK) = -ABx/length;
+      
+      if (length > dxMax)
+	dxMax = length;
+      if (length < dxMin)
+	dxMin = length;
+      
     }
   }
   
@@ -318,8 +326,8 @@ void Mesh::defaultSquare(int nx, int ny) {
   }
   vertices.resize(DIM, nVertices);
   
-  minDX = (topRight.x - botLeft.x)/nx;
-  minDY = (topRight.y - botLeft.y)/ny;
+  dxMin = std::min((topRight.x - botLeft.x)/nx, (topRight.y - botLeft.y)/ny);
+  dxMax = std::max((topRight.x - botLeft.x)/nx, (topRight.y - botLeft.y)/ny);
   
   // Initialize elements-to-vertices array
   eToV.realloc(N_VERTICES, nElements);
@@ -507,9 +515,8 @@ Mesh::Mesh(const Mesh& other) :
   nVertices{other.nVertices},
   botLeft{other.botLeft},
   topRight{other.topRight},
-  minDX{other.minDX},
-  minDY{other.minDY},
-  minDZ{other.minDZ},
+  dxMin{other.dxMin},
+  dxMax{other.dxMax},
   order{other.order},
   nNodes{other.nNodes},
   nFNodes{other.nFNodes},
@@ -543,8 +550,8 @@ void Mesh::setupNodes(const darray& InterpK, int _order) {
     for (int l = 0; l < DIM; ++l) {
       // coord_l = InterpK*bilinear(:,l,iK)
       cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		  nNodes,nVertices,1, 1.0, InterpK.data(), nNodes,
-		  &bilinearMapping(0,l,iK), nVertices, 0.0, xl.data(), nNodes);
+		  nNodes,1,N_VERTICES, 1.0, InterpK.data(), nNodes,
+		  &bilinearMapping(0,l,iK), N_VERTICES, 0.0, xl.data(), nNodes);
       for (int iN = 0; iN < nNodes; ++iN) {
 	globalCoords(l,iN,iK) = xl(iN);
       }
@@ -559,7 +566,7 @@ void Mesh::setupNodes(const darray& InterpK, int _order) {
   }
   
   // nodal points per face
-  nFNodes = initFaceMap(efToN, order+1);
+  nFNodes = initFaceMap(efToN, order+1); 
   
   // quadrature points per face
   int nQ = (int)std::ceil(order+1/2.0);
@@ -577,8 +584,8 @@ void Mesh::setupQuads(const darray& InterpKQ, int nQV) {
     for (int l = 0; l < DIM; ++l) {
       // coord_l = InterpKQ*bilinear(:,l,iK)
       cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		  nQV,nVertices,1, 1.0, InterpKQ.data(), nQV,
-		  &bilinearMapping(0,l,iK), nVertices, 0.0, xl.data(), nQV);
+		  nQV,1,N_VERTICES, 1.0, InterpKQ.data(), nQV,
+		  &bilinearMapping(0,l,iK), N_VERTICES, 0.0, xl.data(), nQV);
       for (int iQ = 0; iQ < nQV; ++iQ) {
 	globalQuads(l,iQ,iK) = xl(iQ);
       }

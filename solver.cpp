@@ -30,11 +30,12 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   u{},
   p{}
 {
-  
+  std::cout << "solver1" << std::endl;
   // Initialize nodes within elements
   chebyshev2D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2);
   
+  std::cout << "solver2" << std::endl;
   // Compute interpolation matrices
   precomputeInterpMatrices(); // sets nQV, xQV, Interp*
   mesh.setupNodes(InterpK, order);
@@ -42,20 +43,24 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   mpi.initDatatype(mesh.nFQNodes);
   mpi.initFaces(Mesh::N_FACES);
   
+  std::cout << "solver3" << std::endl;
   // Initialize physics
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
   initMaterialProps(); // sets mu, lambda, rho
   initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
   
+  std::cout << "solver4" << std::endl;
   // Initialize sources
   initSource(srcParams); // sets p.src
   
+  std::cout << "solver5" << std::endl;
   // Initialize u
   // upper diagonal of E in Voigt notation, followed by v
   // u = [e11, e22, e12, v1, v2]
   u.realloc(dofs, nStates, mesh.nElements);
   initialCondition(); // sets u
   
+  std::cout << "solver6" << std::endl;
   // Compute local matrices
   precomputeLocalMatrices();
   
@@ -269,6 +274,8 @@ void Solver::initMaterialProps() {
     }
   }
   
+  std::cout << "About to transmit material props..." << std::endl;
+  
   // Send material information on MPI boundaries to neighbors
   mpiSendMaterials();
   
@@ -289,7 +296,7 @@ void Solver::initTimeStepping(double dtSnap) {
   
   // Choose dt based on CFL condition
   double CFL = 0.1;
-  dt = CFL*std::min(mesh.minDX, mesh.minDY)/(p.C*(std::max(1, order*order)));
+  dt = CFL*mesh.dxMin/(p.C*(std::max(1, order*order)));
   // Ensure we will exactly end at tf
   timesteps = static_cast<dgSize>(std::ceil(tf/dt));
   dt = tf/timesteps;
@@ -313,10 +320,10 @@ void Solver::initSource(Source::Params& srcParams) {
 	srcParams.vsMin = vsi;
     }
   }
-  srcParams.maxDx = std::max(mesh.minDX, mesh.minDY)/order; // TODO: should be maximum
+  srcParams.dxMax = mesh.dxMax/std::max(order,1);
   
   p.src.init(srcParams);
-  p.src.definePositions(srcParams, mesh, xQV);
+  p.src.definePositions(srcParams, mesh);
 }
 
 /** Sets u according to an initial condition */
@@ -330,8 +337,8 @@ void Solver::initialCondition() {
       double x = mesh.globalCoords(0,iN,iK);
       double y = mesh.globalCoords(1,iN,iK);
       
-      u(iN,0,iK) = 0.0;
-      u(iN,1,iK) = 0.0;
+      u(iN,0,iK) = x; // TODO: debugging
+      u(iN,1,iK) = y; // TODO: debugging
       u(iN,2,iK) = 0.0;
       u(iN,3,iK) = 0.0;
       u(iN,4,iK) = 0.0;
@@ -855,19 +862,21 @@ void Solver::mpiSendMaterials() {
   }
   
   // Actually send/recv the data
-  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+  if (nBElems > 0) {
+    for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
+      
+      MPI_Isend(&toSend(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
+		MPI_DOUBLE, mpi.neighbors(iF), iF,
+		mpi.cartComm, &reqs[2*iF]);
+      
+      MPI_Irecv(&toRecv(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
+		MPI_DOUBLE, mpi.neighbors(iF), mpi.tags(iF),
+		mpi.cartComm, &reqs[2*iF+1]);
+    }
     
-    MPI_Isend(&toSend(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
-	      MPI_DOUBLE, mpi.neighbors(iF), iF,
-	      mpi.cartComm, &reqs[2*iF]);
-    
-    MPI_Irecv(&toRecv(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
-	      MPI_DOUBLE, mpi.neighbors(iF), mpi.tags(iF),
-	      mpi.cartComm, &reqs[2*iF+1]);
+    // Finalize sends/recv
+    MPI_Waitall(2*MPIUtil::N_FACES, reqs, MPI_STATUSES_IGNORE);
   }
-  
-  // Finalize sends/recv
-  MPI_Waitall(2*MPIUtil::N_FACES, reqs, MPI_STATUSES_IGNORE);
   
   // Unpack data
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {

@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
   }
 #define USING_MESH 1
 #ifdef USING_MESH
-  std::string mshFile{"/home/mfranco/scratch/2017/meshes/square.msh"};
+  std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/square.msh"};
   Mesh mesh{mshFile, mpi};
 #else
   Point botLeft{50.0, 25.0};
@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
   srcParams.srcPos(1,0) = 50.0;
   srcParams.srcAmps.realloc(nsrcs);
   srcParams.srcAmps(0) = 1.0;
-  srcParams.type = Source::Wavelet::rtm;
+  srcParams.type = Source::Wavelet::null;
   //srcParams.maxF = 10.0;
   
   // Initialize solver

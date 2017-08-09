@@ -63,7 +63,8 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
     
     // Read in the actual vertices that this element connects
     for (int i = 0; i < n_vertices; ++i) {
-      mshFile >> eToV(i, k);
+      mshFile >> eToV(i,k);
+      eToV(i,k) -= 1; // 1-indexing from Gmsh
     }
   }
   

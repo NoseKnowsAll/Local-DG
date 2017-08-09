@@ -20,7 +20,7 @@ void Source::init(const Params& in) {
   type = in.type;
   
   double ptsPerLambdaMin = 4.0;
-  maxF = in.vsMin/(ptsPerLambdaMin*in.maxDx);
+  maxF = in.vsMin/(ptsPerLambdaMin*in.dxMax);
   
   if (in.maxF && in.maxF > maxF) {
     std::cerr << "ERROR: Requested frequency is too high for model!\n";
@@ -266,14 +266,10 @@ void Source::initRtm(double dt, double minF, double maxF) {
 }
 
 /** Initialize source spatial weights based off of input source positions */
-void Source::definePositions(const Params& in, const Mesh& mesh, const darray& xQV) {
+void Source::definePositions(const Params& in, const Mesh& mesh) {
   
   int nsrcs = in.srcPos.size(1);
-  darray coord{Mesh::DIM};
-  int nQV = 1;
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    nQV *= xQV.size(1+l);
-  }
+  int nQV = mesh.globalQuads.size(1);
   
   weights.realloc(nQV, mesh.nElements);
   
@@ -284,8 +280,7 @@ void Source::definePositions(const Params& in, const Mesh& mesh, const darray& x
 	// Compute distance from quadrature point to source location
 	double dist = 0.0;
 	for (int l = 0; l < Mesh::DIM; ++l) {
-	  coord(l) = mesh.tempMapping(l,0,iK)*xQV(l,iQ)+mesh.tempMapping(l,1,iK);
-	  dist += std::pow(coord(l) - in.srcPos(l,i),2.0);
+	  dist += std::pow(mesh.globalQuads(l,iQ,iK) - in.srcPos(l,i),2.0);
 	}
 	
 	// Create Gaussian around each source evaluated at each quadrature point

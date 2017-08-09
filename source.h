@@ -22,7 +22,7 @@ public:
     int timesteps = 1;
     double dt     = 1.0;
     double vsMin  = 0.0;
-    double maxDx  = 1.0;
+    double dxMax  = 1.0;
     double maxF   = 0.0; // requested maxF
     darray srcPos;
     darray srcAmps;
@@ -39,7 +39,7 @@ public:
   Source();
   Source(const Params& in);
   void init(const Params& in);
-  void definePositions(const Params& in, const Mesh& mesh, const darray& xQV);
+  void definePositions(const Params& in, const Mesh& mesh);
   
 private:
   

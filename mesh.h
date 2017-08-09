@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <iostream>
 #include <set>
+#include <limits>
 
 #include "array.h"
 #include "MPIUtil.h"
@@ -102,12 +103,10 @@ public:
   Point botLeft;
   /** Global bottom left corner of domain */
   Point topRight;
-  /** Global minimum dx of one element */
-  double minDX;
-  /** Global minimum dy of one element */
-  double minDY;
-  /** Global minimum dz of one element */
-  double minDZ;
+  /** Global minimum "dx" across all elements */
+  double dxMin;
+  /** Global maximum "dx" across all elements */
+  double dxMax;
   
   ///////////////////////////////////////
   // Initialized after solver is created
@@ -193,13 +192,13 @@ public:
   /**
      bilinear mapping Tk at each element:
      For every element k, dimension l
-     x_l = sum(bilinearMapping(l,:,k)*phi(xi_l,:))
+     x_l = sum(bilinearMapping(:,l,k)*phi(xi_l,:))
   */
   darray bilinearMapping;
   /**
      temporary mapping Tk at each element:
      For every element k, dimension l
-     x_l = tempMapping(l,0,k)*xi_l + tempMapping(l,1,k)
+     x_l = tempMapping(0,l,k)*xi_l + tempMapping(1,l,k)
   */
   darray tempMapping;
   
