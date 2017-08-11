@@ -75,7 +75,6 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   eToF{},
   normals{},
   bilinearMapping{},
-  tempMapping{},
   efToN{},
   efToQ{}
 {
@@ -107,7 +106,6 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   eToF{},
   normals{},
   bilinearMapping{},
-  tempMapping{},
   efToN{},
   efToQ{}
 {
@@ -218,7 +216,7 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   int mapDofs = static_cast<int>(std::pow((mapOrder+1), DIM));
   if (mapDofs != N_VERTICES) { // better be exactly equal to number of vertices
     std::cerr << "FATAL ERROR: trying to initialize with a map with too high an order!" << std::endl;
-    exit(-1);
+    mpi.exit(-1);
   }
   
   // Gmsh =   3---2   Mapping =  2---3
@@ -297,7 +295,7 @@ void Mesh::defaultSquare(int nx, int ny) {
   for (int l = 0; l < MPIUtil::DIM; ++l) {
     if (localNs[l] < 3) {
       std::cerr << "ERROR: on rank " << mpi.rank << ": " << l << " MPI dimension is not enough to have interior elements!" << std::endl;
-      exit(-1);
+      mpi.exit(-1);
     }
   }
   
@@ -501,6 +499,7 @@ void Mesh::defaultSquare(int nx, int ny) {
     }
   }
   
+  /*
   // Temporary bad mapping, 0 == scaling factor, 1 == translation
   tempMapping.realloc(DIM, 2, nElements);
   for (int iK = 0; iK < nElements; ++iK) {
@@ -511,6 +510,19 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       tempMapping(0,l,iK) = dx/2.0;
       tempMapping(1,l,iK) = x0+dx/2.0;
+    }
+  }
+  */
+  
+  // Mapping =  2---3
+  // wants      |   |
+  //            0---1
+  bilinearMapping.realloc(N_VERTICES, DIM, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int l = 0; l < DIM; ++l) {
+      for (int iV = 0; iV < N_VERTICES; ++iV) {
+	bilinearMapping(iV,l,iK) = vertices(l,eToV(iV,iK));
+      }
     }
   }
   
@@ -542,7 +554,6 @@ Mesh::Mesh(const Mesh& other) :
   eToF{other.eToF},
   normals{other.normals},
   bilinearMapping{other.bilinearMapping},
-  tempMapping{other.tempMapping},
   efToN{other.efToN},
   efToQ{other.efToQ}
 { }
@@ -720,12 +731,12 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk,
     }
     
     
-    // Compute Jacobian = dPhiTkQF(:,:,:,l_j)*bilinearMapping(:,l_i,iK)
+    // Compute Jacobian = dPhiTkQF(:,:,l_j)*bilinearMapping(:,l_i,iK)
     for (int lj = 0; lj < DIM; ++lj) {
       for (int li = 0; li < DIM; ++li) {
 	cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
 		    nQF*N_FACES, 1, N_VERTICES, 1.0, 
-		    &dPhiTkQF(0,0,0,lj), nQF*N_FACES, 
+		    &dPhiTkQF(0,0,lj), nQF*N_FACES, 
 		    &bilinearMapping(0,li,iK), Mesh::N_VERTICES, 
 		    0.0, &JacobianKF(0,0,li,lj), nQF*N_VERTICES);
       }

@@ -63,3 +63,15 @@ void MPIUtil::printString(const std::string& toPrint) const {
   MPI_Barrier(cartComm);
   
 }
+
+/** MPI helper function to gracefully exit all ranks */
+void MPIUtil::exit(int err) const {
+  
+  if (np > 1) {
+    MPI_Barrier(cartComm);
+  }
+  
+  MPI_Finalize();
+  std::exit(err);
+  
+}

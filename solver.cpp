@@ -47,9 +47,7 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   precomputeInterpMatrices(); // sets nQ*,xQ*,wQ*,Interp*
   mesh.setupNodes(InterpTk, order);
   mesh.setupQuads(InterpTkQ, nQV);
-  std::cout << "solver1" << std::endl;
   mesh.setupJacobians(nQV, xQV, Jk, nQF, xQF, JkF);
-  std::cout << "solver2" << std::endl;
   mpi.initDatatype(nQF);
   mpi.initFaces(Mesh::N_FACES);
   
@@ -67,10 +65,8 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   u.realloc(dofs, nStates, mesh.nElements);
   initialCondition(); // sets u
   
-  std::cout << "solver6" << std::endl;
   // Compute local matrices
   precomputeLocalMatrices();
-  std::cout << "solver7" << std::endl;
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "dt = " << dt << std::endl;
@@ -122,7 +118,6 @@ void Solver::precomputeLocalMatrices() {
 	      nQV, mesh.nElements, dofs, 1.0, InterpV.data(), nQV,
 	      p.rho.data(), dofs, 0.0, rhoQ.data(), nQV);
   
-  std::cout << "local1" << std::endl;
   // Set state-to-storage mapping
   sToS.realloc(nStates);
   for (int s = 0; s < Mesh::DIM*(Mesh::DIM+1)/2; ++s) {
@@ -169,23 +164,20 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  std::cout << "local2" << std::endl;
   // Compute gradient of reference bases on the quadrature points
   darray dPhiQ;
   dPhi2D(refNodes, xQV, dPhiQ);
   
-  std::cout << "local3" << std::endl;
   // Initialize K matrices = dx_l(phi_i)*weights
   Kels.realloc(nQV,dofs,Mesh::DIM);
   for (int l = 0; l < Mesh::DIM; ++l) {
     for (int iN = 0; iN < dofs; ++iN) {
       for (int iQ = 0; iQ < nQV; ++iQ) {
-	Kels(iQ, iN, l) = dPhiQ(iQ,iN,0,l)*wQV(iQ);
+	Kels(iQ, iN, l) = dPhiQ(iQ,iN,l)*wQV(iQ);
       }
     }
   }
   
-  std::cout << "local4" << std::endl;
   // Initialize K matrix for use along faces
   KelsF.realloc(nQF,dofsF);
   for (int iFN = 0; iFN < dofsF; ++iFN) {
@@ -290,7 +282,8 @@ void Solver::initSource(Source::Params& srcParams) {
 /** Sets u according to an initial condition */
 void Solver::initialCondition() {
   
-  // trueSolution(u, -p.src.halfSrc*dt);
+  trueSolution(u, -p.src.halfSrc*dt);
+  return;
   
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iN = 0; iN < dofs; ++iN) {
@@ -298,8 +291,8 @@ void Solver::initialCondition() {
       double x = mesh.globalCoords(0,iN,iK);
       double y = mesh.globalCoords(1,iN,iK);
       
-      u(iN,0,iK) = x; // TODO: debugging
-      u(iN,1,iK) = y; // TODO: debugging
+      u(iN,0,iK) = 0.0;
+      u(iN,1,iK) = 0.0;
       u(iN,2,iK) = 0.0;
       u(iN,3,iK) = 0.0;
       u(iN,4,iK) = 0.0;
@@ -391,26 +384,16 @@ void Solver::dgTimeStep() {
       // Output snapshot files
       bool success = initXYZVFile("output/xyu.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
       if (!success)
-	exit(-1);
+	mpi.exit(-1);
       success = exportToXYZVFile("output/xyu.txt", iTime/stepsPerSnap, mesh.globalCoords, u);
       if (!success)
-	exit(-1);
-      
-      // TODO: debugging
-      interpolate(u, uInterpF, uInterpV, toSend, toRecv, rk4Reqs, 1);
-      success = initXYZVFile("output/xyuq.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
-      if (!success)
-	exit(-1);
-      success = exportToXYZVFile("output/xyuq.txt", iTime/stepsPerSnap, mesh.globalQuads, uInterpV);
-      if (!success)
-	exit(-1);
-      std::exit(0);
+	mpi.exit(-1);
       
       double norm = computeL2Norm(u);
       std::cout << "L2 norm = " << norm << std::endl;
       if (std::isnan(norm)) {
 	std::cerr << "ERROR: NaNs detected by norm calculation!" << std::endl;
-	exit(-1);
+	mpi.exit(-1);
       }
       
     }
@@ -1036,7 +1019,7 @@ void Solver::boundaryFluxC(const darray& uK, const darray& normalK, darray& flux
   }
   default: {
     std::cerr << "FATAL ERROR: boundary condition is not a valid choice!" << std::endl;
-    exit(-1);
+    mpi.exit(-1);
     break;
   }
   }

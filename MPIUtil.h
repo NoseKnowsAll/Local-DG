@@ -24,6 +24,9 @@ public:
   /** MPI helper function to print out a string */
   void printString(const std::string& toPrint) const;
   
+  /** MPI helper function to gracefully exit all ranks */
+  void exit(int err) const;
+  
   /** This MPI rank's number */
   int rank;
   /** Total number of MPI tasks */
