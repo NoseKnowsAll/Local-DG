@@ -14,9 +14,10 @@
 #include <set>
 #include <limits>
 
-#include "array.h"
-#include "MPIUtil.h"
 #include "io.h"
+#include "MPIUtil.h"
+#include "dgMath.h"
+#include "array.h"
 
 /** Singular point in 2D or 3D */
 class Point {
@@ -63,7 +64,8 @@ public:
   const static int N_FACES = 2*DIM;
   /** Number of vertices defining element */
   const static int N_VERTICES = 1<<DIM; // 2^DIM
-  
+  /** Number of vertices defining face */
+  const static int N_FVERTICES = 1<<(DIM-1); // 2^(DIM-1)
   
   Mesh();
   Mesh(const MPIUtil& _mpi);
@@ -78,10 +80,18 @@ public:
   void defaultSquare(int nx, int ny);
   
   /** Initialize global nodes from bilinear mapping of reference nodes */
-  void setupNodes(const darray& InterpK, int _order);
+  void setupNodes(const darray& InterpTk, int _order);
   
   /** Initialize global quadrature points from bilinear mappings of reference quadrature points */
-  void setupQuads(const darray& InterpKQ, int nQV);
+  void setupQuads(const darray& InterpTkQ, int nQV);
+  
+  /**
+     Initializes absolute value of determinant of Jacobian of mappings
+     calculated at the quadrature points xQV
+     within the volume stored in Jk and along the faces stored in JkF
+  */
+  void setupJacobians(int nQV, const darray& xQV, darray& Jk,
+		      int nQF, const darray& xQF, darray& JkF) const;
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
@@ -113,12 +123,6 @@ public:
   ///////////////////////////////////////
   /** Order of DG method */
   int order;
-  /** Local number of DG nodes per element */
-  int nNodes;
-  /** Local number of DG nodes per face of an element */
-  int nFNodes;
-  /** Local number of DG quadrature points per face of an element */
-  int nFQNodes;
   /**
      True coordinates of chebyshev nodes for each element:
      For every element k, node i,
@@ -148,6 +152,13 @@ public:
      eToV(i, k) = MPI-local vertex index of local vertex i
    */
   iarray eToV;
+  
+  /**
+     face-to-vertex mapping:
+     For every face j, face vertex i
+     fToV(i,f) = vertex index
+  */
+  iarray fToV;
   
   /**
      boundary element-to-element map:

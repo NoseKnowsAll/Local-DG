@@ -63,13 +63,11 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   dxMin{},
   dxMax{},
   order{},
-  nNodes{},
-  nFNodes{},
-  nFQNodes{},
   globalCoords{},
   globalQuads{},
   vertices{},
   eToV{},
+  fToV{},
   beToE{},
   ieToE{},
   mpibeToE{},
@@ -97,13 +95,11 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   dxMin{},
   dxMax{},
   order{},
-  nNodes{},
-  nFNodes{},
-  nFQNodes{},
   globalCoords{},
   globalQuads{},
   vertices{},
   eToV{},
+  fToV{},
   beToE{},
   ieToE{},
   mpibeToE{},
@@ -119,6 +115,13 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   // Read mesh from file
   readMesh(filename, DIM, N_VERTICES,
   	   nVertices, nElements, vertices, eToV);
+  
+  // Label faces of rectangle according to vertices
+  fToV.realloc(N_FVERTICES,N_FACES);
+  for (int iF = 0; iF < N_FACES; ++iF) {
+    fToV(0,iF) = iF;
+    fToV(1,iF) = (iF+1 == N_FACES ? 0 : iF+1);
+  }
   
   // TODO: make this MPI compatible
   nIElements = nElements;
@@ -136,7 +139,6 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   mpibeToE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
   
   // sequential O(n^2) method for determining eToE/eToF
-  // Careful: assumes face iF is line segment between vertex iF and iF+1
   eToE.realloc(N_FACES, nElements);
   eToF.realloc(N_FACES, nElements);
   barray facesSeen{N_FACES, nElements};
@@ -156,8 +158,9 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
       }
       // Visiting this current element/face
       std::set<int> iFace;
-      iFace.insert(eToV(iF,iK));
-      iFace.insert(eToV((iF+1 == N_FACES ? 0 : iF+1),iK));
+      for (int iFV = 0; iFV < N_FVERTICES; ++iFV) {
+	iFace.insert(eToV(fToV(iFV,iF),iK));
+      }
       
       bool boundary = true;
       
@@ -168,8 +171,10 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
 	    continue;
 	  
 	  std::set<int> nFace;
-	  nFace.insert(eToV(nF,nK));
-	  nFace.insert(eToV((nF+1 == N_FACES ? 0 : nF+1),nK));
+	  for (int nFV = 0; nFV < N_FVERTICES; ++nFV) {
+	    nFace.insert(eToV(fToV(nFV,nF),nK));
+	  }
+	  
 	  if (iFace == nFace) {
 	    // Link both elements
 	    eToE(iF,iK) = nK;
@@ -191,8 +196,8 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
       
       if (boundary) {
 	
-	double y1 = vertices(1, eToV(iF, iK));
-	double y2 = vertices(1, eToV((iF+1 == N_FACES ? 0 : iF+1), iK));
+	double y1 = vertices(1, eToV(fToV(0,iF), iK));
+	double y2 = vertices(1, eToV(fToV(1,iF), iK));
 	if (y1 == 0.0 && y2 == 0.0) {
 	  // north face has free surface condition
 	  eToE(iF,iK) = static_cast<int>(Boundary::free);
@@ -216,11 +221,18 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
     exit(-1);
   }
   
+  // Gmsh =   3---2   Mapping =  2---3
+  // CCW      |   |   wants      |   |
+  // corners  0---1              0---1
+  darray c2m{N_VERTICES}; // corner to mapping
+  c2m(0) = 0; c2m(1) = 1;
+  c2m(2) = 3; c2m(3) = 2;
+  
   bilinearMapping.realloc(N_VERTICES, DIM, nElements);
   for (int iK = 0; iK < nElements; ++iK) {
     for (int l = 0; l < DIM; ++l) {
       for (int iV = 0; iV < N_VERTICES; ++iV) {
-	bilinearMapping(iV,l,iK) = vertices(l,eToV(iV,iK)); // TODO - is this correct?
+	bilinearMapping(c2m(iV),l,iK) = vertices(l,eToV(iV,iK));
       }
     }
   }
@@ -233,8 +245,8 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   normals.realloc(DIM, N_FACES, nElements);
   for (int iK = 0; iK < nElements; ++iK) {
     for (int iF = 0; iF < N_FACES; ++iF) {
-      int a = iF;
-      int b = (iF+1 == N_FACES ? 0 : iF+1);
+      int a = fToV(0,iF);
+      int b = fToV(1,iF);
       
       double ABx = vertices(0,eToV(b,iK)) - vertices(0,eToV(a,iK));
       double ABy = vertices(1,eToV(b,iK)) - vertices(1,eToV(a,iK));
@@ -518,13 +530,11 @@ Mesh::Mesh(const Mesh& other) :
   dxMin{other.dxMin},
   dxMax{other.dxMax},
   order{other.order},
-  nNodes{other.nNodes},
-  nFNodes{other.nFNodes},
-  nFQNodes{other.nFQNodes},
   globalCoords{other.globalCoords},
   globalQuads{other.globalQuads},
   vertices{other.vertices},
   eToV{other.eToV},
+  fToV{other.fToV},
   beToE{other.beToE},
   ieToE{other.ieToE},
   mpibeToE{other.mpibeToE},
@@ -538,69 +548,52 @@ Mesh::Mesh(const Mesh& other) :
 { }
 
 /** Initialize global nodes from bilinear mapping of reference nodes */
-void Mesh::setupNodes(const darray& InterpK, int _order) {
+void Mesh::setupNodes(const darray& InterpTk, int _order) {
   
   order = _order;
-  nNodes = InterpK.size(0);
+  int nNodes = InterpTk.size(0);
   
   darray xl{nNodes};
-  // Scales and translates Chebyshev nodes into each element by applying bilinear mapping
+  // Scales and translates nodes into each element by applying bilinear mapping
   globalCoords.realloc(DIM, nNodes, nElements);
   for (int iK = 0; iK < nElements; ++iK) {
     for (int l = 0; l < DIM; ++l) {
-      // coord_l = InterpK*bilinear(:,l,iK)
+      // coord_l = InterpTk*bilinear(:,l,iK)
       cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		  nNodes,1,N_VERTICES, 1.0, InterpK.data(), nNodes,
+		  nNodes,1,N_VERTICES, 1.0, InterpTk.data(), nNodes,
 		  &bilinearMapping(0,l,iK), N_VERTICES, 0.0, xl.data(), nNodes);
       for (int iN = 0; iN < nNodes; ++iN) {
 	globalCoords(l,iN,iK) = xl(iN);
       }
     }
-    
-    // Previous mapping
-    //for (int iN = 0; iN < nNodes; ++iN) {
-    //  for (int l = 0; l < DIM; ++l) {
-    //    globalCoords(l,iN,iK) = tempMapping(0,l,iK)*refNodes(l,iN)+tempMapping(1,l,iK);
-    //  }
-    //}
   }
   
-  // nodal points per face
-  nFNodes = initFaceMap(efToN, order+1); 
-  
-  // quadrature points per face
-  int nQ = (int)std::ceil(order+1/2.0);
-  nFQNodes = initFaceMap(efToQ, nQ);
-  mpi.initDatatype(nFQNodes);
+  // Nodes per face
+  int nFNodes = initFaceMap(efToN, order+1); 
   
 }
 
 /** Initialize global quadrature points from bilinear mappings of reference quadrature points */
-void Mesh::setupQuads(const darray& InterpKQ, int nQV) {
+void Mesh::setupQuads(const darray& InterpTkQ, int nQV) {
   
   globalQuads.realloc(DIM, nQV, nElements);
   darray xl{nQV};
   for (int iK = 0; iK < nElements; ++iK) {
     for (int l = 0; l < DIM; ++l) {
-      // coord_l = InterpKQ*bilinear(:,l,iK)
+      // coord_l = InterpTkQ*bilinear(:,l,iK)
       cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		  nQV,1,N_VERTICES, 1.0, InterpKQ.data(), nQV,
+		  nQV,1,N_VERTICES, 1.0, InterpTkQ.data(), nQV,
 		  &bilinearMapping(0,l,iK), N_VERTICES, 0.0, xl.data(), nQV);
       for (int iQ = 0; iQ < nQV; ++iQ) {
 	globalQuads(l,iQ,iK) = xl(iQ);
       }
     }
   }
-
-  /* Previous mapping
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int iQ = 0; iQ < nQV; ++iQ) {
-      for (int l = 0; l < DIM; ++l) {
-	globalQuads(l,iQ,iK) = tempMapping(0,l,iK)*xQV(l,iQ)+tempMapping(1,l,iK);
-      }
-    }
-  }
-  */
+  
+  // Quadrature points per face
+  int nQ = (int)std::ceil(order+1/2.0);
+  int nFQNodes = initFaceMap(efToQ, nQ);
+  mpi.initDatatype(nFQNodes);
   
 }
 
@@ -651,6 +644,106 @@ int Mesh::initFaceMap(iarray& efMap, int size1D) {
   int tempFNodes = size1D;
   efMap.resize(tempFNodes, N_FACES);
   return tempFNodes;
+  
+}
+
+
+/**
+   Initializes absolute value of determinant of Jacobian of mappings
+   calculated at the quadrature points xQV
+   within the volume stored in Jk and along the faces stored in JkF
+*/
+void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk,
+			  int nQF, const darray& xQF, darray& JkF) const {
+  
+  int mapOrder = 1;
+  
+  // Compute gradient of mapping reference bases on the quadrature points
+  darray chebyTk;
+  chebyshev2D(mapOrder, chebyTk);
+  darray dPhiTkQ;
+  dPhi2D(chebyTk, xQV, dPhiTkQ);
+  
+  // Explicitly form the face quadrature points
+  darray chebyTkF;
+  chebyshev1D(mapOrder, chebyTkF);
+  darray xQF2D{DIM, nQF, N_FACES};
+  // Below mappings based off of fToV implicitly. TODO: Make it explicit?
+  int iF = 0;
+  for (int iQ = 0; iQ < nQF; ++iQ) {
+    xQF2D(0,iQ,iF) = xQF(0,iQ);
+    xQF2D(1,iQ,iF) = chebyTkF(0,0); // along xi_1 = -1
+  }
+  iF = 1;
+  for (int iQ = 0; iQ < nQF; ++iQ) {
+    xQF2D(0,iQ,iF) = chebyTkF(0,1); // along xi_0 = 1
+    xQF2D(1,iQ,iF) = xQF(0,iQ);
+  }
+  iF = 2;
+  for (int iQ = 0; iQ < nQF; ++iQ) {
+    xQF2D(0,iQ,iF) = xQF(0,iQ);
+    xQF2D(1,iQ,iF) = chebyTkF(0,1); // along xi_1 = 1
+  }
+  iF = 3;
+  for (int iQ = 0; iQ < nQF; ++iQ) {
+    xQF2D(0,iQ,iF) = chebyTkF(0,0); // along xi_0 = -1
+    xQF2D(1,iQ,iF) = xQF(0,iQ);
+  }
+  
+  // Compute gradient of mapping reference bases on the face quadrature points
+  darray dPhiTkQF;
+  dPhi2D(chebyTk, xQF2D, dPhiTkQF);
+  
+  // Initialize Jacobians
+  darray JacobianK{nQV, DIM, DIM};
+  darray JacobianKF{nQF,N_FACES, DIM, DIM};
+  Jk.realloc(nQV,nElements);
+  JkF.realloc(nQF,N_FACES,nElements);
+  
+  for (int iK = 0; iK < nElements; ++iK) {
+    
+    // Compute Jacobian = dPhiTkQ(:,:,l_j)*bilinearMapping(:,l_i,iK)
+    for (int lj = 0; lj < DIM; ++lj) {
+      for (int li = 0; li < DIM; ++li) {
+	cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
+		    nQV,1,N_VERTICES, 1.0, &dPhiTkQ(0,0,lj), nQV, 
+		    &bilinearMapping(0,li,iK), Mesh::N_VERTICES, 
+		    0.0, &JacobianK(0,li,lj), nQV);
+      }
+    }
+    
+    // Compute Jk = |det(Jacobian)| at each quadrature point
+    for (int iQ = 0; iQ < nQV; ++iQ) {
+      Jk(iQ,iK) = JacobianK(iQ,0,0)*JacobianK(iQ,1,1) 
+	        - JacobianK(iQ,1,0)*JacobianK(iQ,0,1);
+      Jk(iQ,iK) = std::abs(Jk(iQ,iK));
+    }
+    
+    
+    // Compute Jacobian = dPhiTkQF(:,:,:,l_j)*bilinearMapping(:,l_i,iK)
+    for (int lj = 0; lj < DIM; ++lj) {
+      for (int li = 0; li < DIM; ++li) {
+	cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
+		    nQF*N_FACES, 1, N_VERTICES, 1.0, 
+		    &dPhiTkQF(0,0,0,lj), nQF*N_FACES, 
+		    &bilinearMapping(0,li,iK), Mesh::N_VERTICES, 
+		    0.0, &JacobianKF(0,0,li,lj), nQF*N_VERTICES);
+      }
+    }
+    
+    // TODO: think about this carefuly, should JkF = ||normal||?
+    // 1D integral => Only have a |gamma'(t)| term along correct xi_{l_i}
+    // Compute JkF = |gamma'(t)| along at each face quadrature point
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      for (int iQ = 0; iQ < nQF; ++iQ) {
+	// again, implicit dependence on fToV
+	int li = (iF % 2 == 0 ? 0 : 1);
+	JkF(iQ,iF,iK) = std::sqrt(JacobianKF(iQ,iF,li,0)*JacobianKF(iQ,iF,li,0) 
+				+ JacobianKF(iQ,iF,li,1)*JacobianKF(iQ,iF,li,1));
+      }
+    }
+    
+  }
   
 }
 

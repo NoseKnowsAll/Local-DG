@@ -116,4 +116,28 @@ void interpolationMatrix2D(const darray& xFrom, const darray& xTo, darray& INTER
 */
 void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTERP);
 
+/**
+   Computes the derivative of the basis functions defined by 1D points on another set of 1D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define an interval.
+   Points interpolating onto can be of any size, but must be defined on that same interval.
+*/
+void dPhi1D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
+
+/**
+   Computes the gradient of the basis functions defined by 2D points on another set of 2D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a square.
+   Points interpolating onto can be of any size, but must be defined on that same square.
+*/
+void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
+
+/**
+   Computes the gradient of the basis functions defined by 3D points on another set of 3D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a cube.
+   Points interpolating onto can be of any size, but must be defined on that same cube.
+*/
+void dPhi3D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
+
 #endif

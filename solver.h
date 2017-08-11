@@ -14,9 +14,9 @@
 
 #include "source.h"
 #include "mesh.h"
+#include "io.h"
 #include "MPIUtil.h"
 #include "dgMath.h"
-#include "io.h"
 #include "rk4.h"
 #include "array.h"
 
@@ -33,9 +33,17 @@ private:
   
   int order;
   int dofs;
-  int nQV;
   darray refNodes;
+  int dofsF;
+  darray refNodesF;
+  
+  int nQV;
   darray xQV;
+  darray wQV;
+  int nQF;
+  darray xQF;
+  darray wQF;
+  
   int nStates;
   darray Mel;
   iarray Mipiv;
@@ -43,11 +51,14 @@ private:
   darray Kels;
   darray KelsF;
   
-  darray InterpF;  // Interpolates faces nodes to face Gaussian pts
-  darray InterpV;  // Interpolates volume nodes to volume Gaussian pts
-  darray InterpW;  // InterpV*Weights
-  darray InterpK;  // Interpolates bilinear map Tk to volume nodes
-  darray InterpKQ; // Interpolates bilinear map Tk to volume quadrature pts
+  darray InterpF;   // Interpolates faces nodes to face Gaussian pts
+  darray InterpV;   // Interpolates volume nodes to volume Gaussian pts
+  darray InterpW;   // InterpV*Weights
+  darray InterpTk;  // Interpolates bilinear map Tk to volume nodes
+  darray InterpTkQ; // Interpolates bilinear map Tk to volume quadrature pts
+  
+  darray Jk;  // |det(Jacobian(Tk))| at each volume quadrature point
+  darray JkF; // |det(Jacobian(Tk))| at each face quadrature point
   
   darray u;
   

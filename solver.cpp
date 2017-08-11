@@ -13,9 +13,15 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   stepsPerSnap{},
   order{_order},
   dofs{},
-  nQV{},
   refNodes{},
+  dofsF{},
+  refNodesF{},
+  nQV{},
   xQV{},
+  wQV{},
+  nQF{},
+  xQF{},
+  wQF{},
   nStates{},
   Mel{},
   Mipiv{},
@@ -25,35 +31,36 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   InterpF{},
   InterpV{},
   InterpW{},
-  InterpK{},
-  InterpKQ{},
+  InterpTk{},
+  InterpTkQ{},
   u{},
   p{}
 {
-  std::cout << "solver1" << std::endl;
+  
   // Initialize nodes within elements
   chebyshev2D(order, refNodes);
   dofs = refNodes.size(1)*refNodes.size(2);
+  chebyshev1D(order, refNodesF);
+  dofsF = refNodesF.size(1);
   
-  std::cout << "solver2" << std::endl;
   // Compute interpolation matrices
-  precomputeInterpMatrices(); // sets nQV, xQV, Interp*
-  mesh.setupNodes(InterpK, order);
-  mesh.setupQuads(InterpKQ, nQV);
-  mpi.initDatatype(mesh.nFQNodes);
+  precomputeInterpMatrices(); // sets nQ*,xQ*,wQ*,Interp*
+  mesh.setupNodes(InterpTk, order);
+  mesh.setupQuads(InterpTkQ, nQV);
+  std::cout << "solver1" << std::endl;
+  mesh.setupJacobians(nQV, xQV, Jk, nQF, xQF, JkF);
+  std::cout << "solver2" << std::endl;
+  mpi.initDatatype(nQF);
   mpi.initFaces(Mesh::N_FACES);
   
-  std::cout << "solver3" << std::endl;
   // Initialize physics
   nStates = Mesh::DIM*(Mesh::DIM+1)/2 + Mesh::DIM;
   initMaterialProps(); // sets mu, lambda, rho
   initTimeStepping(dtSnap); // sets dt, timesteps, stepsPerSnap
   
-  std::cout << "solver4" << std::endl;
   // Initialize sources
   initSource(srcParams); // sets p.src
   
-  std::cout << "solver5" << std::endl;
   // Initialize u
   // upper diagonal of E in Voigt notation, followed by v
   // u = [e11, e22, e12, v1, v2]
@@ -63,6 +70,7 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   std::cout << "solver6" << std::endl;
   // Compute local matrices
   precomputeLocalMatrices();
+  std::cout << "solver7" << std::endl;
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "dt = " << dt << std::endl;
@@ -76,64 +84,33 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
 void Solver::precomputeInterpMatrices() {
   
   // 1D interpolation matrix for use on faces
-  darray chebyF;
-  chebyshev1D(order, chebyF);
-  darray xQF, wQF;
-  gaussQuad1D(2*order, xQF, wQF);
-  
-  interpolationMatrix1D(chebyF, xQF, InterpF);
+  nQF = gaussQuad1D(2*order, xQF, wQF);
+  interpolationMatrix1D(refNodesF, xQF, InterpF);
   
   // 2D interpolation matrix for use on elements
-  darray wQV;
   nQV = gaussQuad2D(2*order, xQV, wQV);
   interpolationMatrix2D(refNodes, xQV, InterpV);
-  
-  // 2D interpolation for use with mappings onto volume nodes
-  darray chebyK;
-  chebyshev2D(1, chebyK);
-  interpolationMatrix2D(chebyK, refNodes, InterpK);
-
-  // 2D interpolation for use with mappings onto volume quadrature pts
-  interpolationMatrix2D(chebyK, xQV, InterpKQ);
-  
-}
-
-/** Precomputes all the local matrices used by DG method */
-void Solver::precomputeLocalMatrices() {
-  
-  // Create nodal representation of the reference bases
-  darray lV;
-  legendre2D(order, refNodes, lV);
-  
-  darray coeffsPhi{order+1,order+1,order+1,order+1};
-  for (int ipy = 0; ipy <= order; ++ipy) {
-    for (int ipx = 0; ipx <= order; ++ipx) {
-      coeffsPhi(ipx,ipy,ipx,ipy) = 1.0;
-    }
-  }
-  lapack_int ipiv[dofs];
-  LAPACKE_dgesv(LAPACK_COL_MAJOR, dofs, dofs, 
-		lV.data(), dofs, ipiv, coeffsPhi.data(), dofs);
-  
-  // Compute derivative of reference bases on the quadrature points
-  darray xQ, wQ;
-  gaussQuad2D(2*order, xQ, wQ);
-  darray dPolyQuad;
-  dlegendre2D(order, xQ, dPolyQuad);
-  darray dPhiQ{nQV,order+1,order+1,Mesh::DIM};
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, 
-		nQV, dofs, dofs, 1.0, &dPolyQuad(0,0,0,l), nQV, 
-		coeffsPhi.data(), dofs, 0.0, &dPhiQ(0,0,0,l), nQV);
-  }
   
   // Store weights*InterpV in InterpW to avoid recomputing every time
   InterpW.realloc(nQV, dofs);
   for (int iN = 0; iN < dofs; ++iN) {
     for (int iQ = 0; iQ < nQV; ++iQ) {
-      InterpW(iQ, iN) = InterpV(iQ, iN)*wQ(iQ);
+      InterpW(iQ, iN) = InterpV(iQ, iN)*wQV(iQ);
     }
   }
+  
+  // 2D interpolation for use with mappings onto volume nodes
+  darray chebyTk;
+  chebyshev2D(1, chebyTk);
+  interpolationMatrix2D(chebyTk, refNodes, InterpTk);
+  
+  // 2D interpolation for use with mappings onto volume quadrature pts
+  interpolationMatrix2D(chebyTk, xQV, InterpTkQ);
+  
+}
+
+/** Precomputes all the local matrices used by DG method */
+void Solver::precomputeLocalMatrices() {
   
   // Initialize mass matrices = integrate(ps*phi_i*phi_j)
   int storage = 2;
@@ -145,6 +122,7 @@ void Solver::precomputeLocalMatrices() {
 	      nQV, mesh.nElements, dofs, 1.0, InterpV.data(), nQV,
 	      p.rho.data(), dofs, 0.0, rhoQ.data(), nQV);
   
+  std::cout << "local1" << std::endl;
   // Set state-to-storage mapping
   sToS.realloc(nStates);
   for (int s = 0; s < Mesh::DIM*(Mesh::DIM+1)/2; ++s) {
@@ -156,13 +134,6 @@ void Solver::precomputeLocalMatrices() {
   
   // Compute mass matrix = Interp'*W*Jk*Ps*Interp
   for (int iK = 0; iK < mesh.nElements; ++iK) {
-    
-    // Compute Jacobian = det(Jacobian(Tk))
-    double Jacobian = 1.0;
-    for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(l,0,iK);
-    }
-    
     for (int s = 0; s < storage; ++s) {
       
       // localJPI = Jk*Ps*Interp
@@ -171,7 +142,7 @@ void Solver::precomputeLocalMatrices() {
 	// P == I
 	for (int iN = 0; iN < dofs; ++iN) {
 	  for (int iQ = 0; iQ < nQV; ++iQ) {
-	    localJPI(iQ, iN) = Jacobian*InterpV(iQ, iN);
+	    localJPI(iQ, iN) = Jk(iQ,iK)*InterpV(iQ,iN);
 	  }
 	}
 	break;
@@ -180,7 +151,7 @@ void Solver::precomputeLocalMatrices() {
 	// P == rho*I
 	for (int iN = 0; iN < dofs; ++iN) {
 	  for (int iQ = 0; iQ < nQV; ++iQ) {
-	    localJPI(iQ, iN) = Jacobian*rhoQ(iQ)*InterpV(iQ, iN);
+	    localJPI(iQ, iN) = Jk(iQ,iK)*rhoQ(iQ,iK)*InterpV(iQ,iN);
 	  }
 	}
 	break;
@@ -198,36 +169,28 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  // TODO: everything below here needs to work with new mappings
-  darray alpha{Mesh::DIM};
-  double Jacobian = 1.0;
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    alpha(l) = mesh.tempMapping(l,0,0);
-    Jacobian *= mesh.tempMapping(l,0,0);
-  }
+  std::cout << "local2" << std::endl;
+  // Compute gradient of reference bases on the quadrature points
+  darray dPhiQ;
+  dPhi2D(refNodes, xQV, dPhiQ);
   
+  std::cout << "local3" << std::endl;
   // Initialize K matrices = dx_l(phi_i)*weights
   Kels.realloc(nQV,dofs,Mesh::DIM);
   for (int l = 0; l < Mesh::DIM; ++l) {
-    double scaleL = Jacobian/alpha(l);
-    for (int iDofs = 0; iDofs < dofs; ++iDofs) {
+    for (int iN = 0; iN < dofs; ++iN) {
       for (int iQ = 0; iQ < nQV; ++iQ) {
-	Kels(iQ, iDofs, l) = dPhiQ(iQ, iDofs,0, l)*wQ(iQ)*scaleL;
+	Kels(iQ, iN, l) = dPhiQ(iQ,iN,0,l)*wQV(iQ);
       }
     }
   }
   
+  std::cout << "local4" << std::endl;
   // Initialize K matrix for use along faces
-  darray xQF, wQF;
-  int fSizeQ = gaussQuad1D(2*order, xQF, wQF);
-  int fDofs = (order+1);
-  KelsF.realloc(fSizeQ,fDofs, Mesh::DIM);
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    double scaleL = Jacobian/alpha(l);
-    for (int iDofs = 0; iDofs < fDofs; ++iDofs) {
-      for (int iQ = 0; iQ < fSizeQ; ++iQ) {
-	KelsF(iQ, iDofs, l) = InterpF(iQ,iDofs)*wQF(iQ)*scaleL;
-      }
+  KelsF.realloc(nQF,dofsF);
+  for (int iFN = 0; iFN < dofsF; ++iFN) {
+    for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+      KelsF(iFQ,iFN) = InterpF(iFQ,iFN)*wQF(iFQ);
     }
   }
   
@@ -273,8 +236,6 @@ void Solver::initMaterialProps() {
       }
     }
   }
-  
-  std::cout << "About to transmit material props..." << std::endl;
   
   // Send material information on MPI boundaries to neighbors
   mpiSendMaterials();
@@ -384,7 +345,6 @@ void Solver::trueSolution(darray& uTrue, double t) const {
 void Solver::dgTimeStep() {
   
   // Allocate working memory
-  int nQF = mesh.nFQNodes;
   darray uCurr{dofs, nStates, mesh.nElements, 1};
   darray uInterpF{nQF, nStates, Mesh::N_FACES, mesh.nElements+mesh.nGElements, 1};
   darray uInterpV{nQV, nStates, mesh.nElements, 1};
@@ -435,6 +395,16 @@ void Solver::dgTimeStep() {
       success = exportToXYZVFile("output/xyu.txt", iTime/stepsPerSnap, mesh.globalCoords, u);
       if (!success)
 	exit(-1);
+      
+      // TODO: debugging
+      interpolate(u, uInterpF, uInterpV, toSend, toRecv, rk4Reqs, 1);
+      success = initXYZVFile("output/xyuq.txt", Mesh::DIM, iTime/stepsPerSnap, "u", nStates);
+      if (!success)
+	exit(-1);
+      success = exportToXYZVFile("output/xyuq.txt", iTime/stepsPerSnap, mesh.globalQuads, uInterpV);
+      if (!success)
+	exit(-1);
+      std::exit(0);
       
       double norm = computeL2Norm(u);
       std::cout << "L2 norm = " << norm << std::endl;
@@ -519,14 +489,12 @@ void Solver::interpolate(const darray& curr, darray& toInterpF, darray& toInterp
 			 darray& toSend, darray& toRecv, MPI_Request * rk4Reqs, int dim) const {
   
   // First grab u on faces and pack into array uOnFaces
-  int nFN = mesh.nFNodes;
-  int nQF = mesh.nFQNodes;
-  darray onFaces{nFN, nStates, Mesh::N_FACES, mesh.nElements, dim};
+  darray onFaces{dofsF, nStates, Mesh::N_FACES, mesh.nElements, dim};
   for (int l = 0; l < dim; ++l) {
     for (int iK = 0; iK < mesh.nElements; ++iK) {
       for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
 	for (int iS = 0; iS < nStates; ++iS) {
-	  for (int iFN = 0; iFN < nFN; ++iFN) {
+	  for (int iFN = 0; iFN < dofsF; ++iFN) {
 	    onFaces(iFN, iS, iF, iK, l) = curr(mesh.efToN(iFN, iF), iS, iK, l);
 	  }
 	}
@@ -535,8 +503,8 @@ void Solver::interpolate(const darray& curr, darray& toInterpF, darray& toInterp
     
     // Face interpolation toInterpF = InterpF*uOnFaces
     cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		nQF, nStates*Mesh::N_FACES*mesh.nElements, nFN, 1.0, 
-		InterpF.data(), nQF, &onFaces(0,0,0,0,l), nFN, 
+		nQF, nStates*Mesh::N_FACES*mesh.nElements, dofsF, 1.0, 
+		InterpF.data(), nQF, &onFaces(0,0,0,0,l), dofsF, 
 		0.0, &toInterpF(0,0,0,0,l), nQF);
   }
   
@@ -565,29 +533,16 @@ void Solver::sourceVolume(darray& residual, int istage, int iTime) const {
   
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     
-    // Compute Jacobian = det(Jacobian(Tk))
-    double Jacobian = 1.0;
-    for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(l,0,iK);
-    }
-    
-    // Compute localJWI = J*W*Interp
+    // Compute localJWI = Jk*W*Interp
     for (int iN = 0; iN < dofs; ++iN) {
       for (int iQ = 0; iQ < nQV; ++iQ) {
-	localJWI(iQ, iN) = Jacobian*InterpW(iQ, iN);
+	localJWI(iQ, iN) = Jk(iQ,iK)*InterpW(iQ, iN);
       }
     }
     
     // Compute f = rho(x)*g(x)*w(t)
-    bool debug = false;
     for (int iQ = 0; iQ < nQV; ++iQ) {
       f(iQ) = p.rho(iQ,iK)*p.src.weights(iQ,iK)*waveAmp;
-      if (f(iQ) != 0)
-	debug = true;
-    }
-    
-    if (debug) {
-      f(0);
     }
     
     // Compute b = Interp'*W*J*f
@@ -620,12 +575,10 @@ void Solver::sourceVolume(darray& residual, int istage, int iTime) const {
 */
 void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
   
-  int nFN = mesh.nFNodes;
-  int nQF = mesh.nFQNodes;
-  
   // Initialize flux along faces
   darray fStar{nQF, nStates};
-  darray faceContributions{nFN, nStates};
+  darray faceContributions{dofsF, nStates};
+  darray KelsFJ{nQF, dofsF};
   
   darray fluxes{nStates};
   darray uK{nStates};
@@ -635,7 +588,7 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iF = 0; iF < Mesh::N_FACES; ++iF) {
       
-      // For every face, compute fstar = fc*(InterpF*u)
+      // For every face, compute fstar = fc*(uInterpF)
       auto nK = mesh.eToE(iF, iK);
       
       darray normalK{&mesh.normals(0,iF,iK), Mesh::DIM};
@@ -694,15 +647,22 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
 	
       }
       
-      // Flux contribution = KelsF(:,l)'*fstar
+      // KelsFJ = KelsF*JkF
+      for (int iFN = 0; iFN < dofsF; ++iFN) {
+	for (int iFQ = 0; iFQ < nQF; ++iFQ) {
+	  KelsFJ(iFQ,iFN) = KelsF(iFQ,iFN)*JkF(iFQ,iF);
+	}
+      }
+      
+      // Flux contribution = KelsFJ'*fstar
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, 
-		  nFN, nStates, nQF, 1.0, &KelsF(0,0,iF/2), nQF, 
+		  dofsF, nStates, nQF, 1.0, KelsFJ.data(), nQF, 
 		  fStar.data(), nQF, 
-		  0.0, faceContributions.data(), nFN);
+		  0.0, faceContributions.data(), dofsF);
       
       // Add up face contributions into global residual array
       for (int iS = 0; iS < nStates; ++iS) {
-	for (int iFN = 0; iFN < nFN; ++iFN) {
+	for (int iFN = 0; iFN < dofsF; ++iFN) {
 	  residual(mesh.efToN(iFN,iF), iS, iK) += faceContributions(iFN, iS);
 	}
       }
@@ -716,7 +676,9 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
 void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
   
   // Contains all flux information
-  darray fc{nQV, nStates, mesh.nElements, Mesh::DIM};
+  darray fc{nQV, nStates, Mesh::DIM};
+  // JKel = Jk*W*dPhi_l
+  darray localJKel{nQV,dofs};
   
   // Temporary arrays for computing fluxes
   darray fluxes{nStates, Mesh::DIM};
@@ -735,18 +697,27 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
       // Copy data into fc
       for (int l = 0; l < Mesh::DIM; ++l) {
 	for (int iS = 0; iS < nStates; ++iS) {
-	  fc(iQ,iS,iK,l) = fluxes(iS, l);
+	  fc(iQ,iS,l) = fluxes(iS,l);
 	}
       }
       
     }
-  }
-  
-  // residual += Kels(:, l)*fc_l(uInterpV)
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		dofs, nStates*mesh.nElements, nQV, 1.0, &Kels(0,0,l), nQV,
-		&fc(0,0,0,l), nQV, 1.0, residual.data(), dofs);
+    
+    for (int l = 0; l < Mesh::DIM; ++l) {
+      
+      // localJKel = Jk*W*dPhi_l
+      for (int iN = 0; iN < dofs; ++iN) {
+	for (int iQ = 0; iQ < nQV; ++iQ) {
+	  localJKel(iQ,iN) = Jk(iQ,iK)*Kels(iQ,iN,l);
+	}
+      }
+      
+      // residual += localJKel_l*fc_l(uInterpV)
+      cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		  dofs, nStates, nQV, 1.0, localJKel.data(), nQV,
+		  &fc(0,0,l), nQV, 1.0, &residual(0,0,iK), dofs);
+      
+    }
   }
   
 }
@@ -759,7 +730,8 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
 */
 void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, darray& toRecv, MPI_Request * rk4Reqs) const {
   
-  int nQF = mesh.nFQNodes;
+  if (nStates*max(mesh.mpiNBElems)*dim == 0)
+    return; // nothing to communicate
   
   // Pack face data to send
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
@@ -800,7 +772,8 @@ void Solver::mpiStartComm(const darray& interpolated, int dim, darray& toSend, d
 */
 void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI_Request * rk4Reqs) const {
   
-  int nQF = mesh.nFQNodes;
+  if (nStates*max(mesh.mpiNBElems)*dim == 0)
+    return; // nothing to communicate
   
   // Finalizes sends/recvs
   MPI_Waitall(2*MPIUtil::N_FACES, rk4Reqs, MPI_STATUSES_IGNORE);
@@ -841,8 +814,10 @@ void Solver::mpiEndComm(darray& interpolated, int dim, const darray& toRecv, MPI
 void Solver::mpiSendMaterials() {
   
   int nmaterials = 3;
-  int nQF = mesh.nFQNodes;
   int nBElems = max(mesh.mpiNBElems);
+  if (nmaterials*nQF*nBElems == 0)
+    return; // nothing to communicate
+  
   darray toSend{nmaterials, nQF, nBElems, MPIUtil::N_FACES};
   darray toRecv{nmaterials, nQF, nBElems, MPIUtil::N_FACES};
   // Requests for MPI: 2*face == send, 2*face+1 == recv
@@ -862,21 +837,19 @@ void Solver::mpiSendMaterials() {
   }
   
   // Actually send/recv the data
-  if (nBElems > 0) {
-    for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
-      
-      MPI_Isend(&toSend(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
-		MPI_DOUBLE, mpi.neighbors(iF), iF,
-		mpi.cartComm, &reqs[2*iF]);
-      
-      MPI_Irecv(&toRecv(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
-		MPI_DOUBLE, mpi.neighbors(iF), mpi.tags(iF),
-		mpi.cartComm, &reqs[2*iF+1]);
-    }
+  for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
     
-    // Finalize sends/recv
-    MPI_Waitall(2*MPIUtil::N_FACES, reqs, MPI_STATUSES_IGNORE);
+    MPI_Isend(&toSend(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
+	      MPI_DOUBLE, mpi.neighbors(iF), iF,
+	      mpi.cartComm, &reqs[2*iF]);
+    
+    MPI_Irecv(&toRecv(0,0,0,iF), nmaterials*nQF*mesh.mpiNBElems(iF),
+	      MPI_DOUBLE, mpi.neighbors(iF), mpi.tags(iF),
+	      mpi.cartComm, &reqs[2*iF+1]);
   }
+  
+  // Finalize sends/recv
+  MPI_Waitall(2*MPIUtil::N_FACES, reqs, MPI_STATUSES_IGNORE);
   
   // Unpack data
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
@@ -898,6 +871,104 @@ void Solver::mpiSendMaterials() {
   
 }
 
+/**
+   Compute the L2 error ||u-uTrue||_{L^2} of a function defined at the nodes.
+   Reuses the storage in uTrue to compute this error.
+*/
+double Solver::computeL2Error(const darray& uCurr, darray& uTrue) const {
+  
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iS = 0; iS < nStates; ++iS) {
+      for (int iN = 0; iN < dofs; ++iN) {
+	uTrue(iN,iS,iK) -= uCurr(iN,iS,iK);
+      }
+    }
+  }
+  
+  return computeL2Norm(uTrue);
+}
+
+/**
+   Compute the L2 norm ||u||_{L^2} of a function defined at the nodes.
+   Norm = u'*Mel*u
+*/
+double Solver::computeL2Norm(const darray& uCurr) const {
+  
+  darray Mloc{dofs, dofs};
+  darray JIloc{nQV, dofs};
+  darray Mu{dofs,nStates};
+  darray norms{nStates, nStates}; // diagonal contains L2Norm of each state
+  darray l2Norms{nStates};
+  
+  for (int iS = 0; iS < nStates; ++iS) {
+    l2Norms(iS) = 0.0;
+  }
+  
+  // Add local contribution to norm at each element
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    
+    // JIloc = Jk*Interp
+    for (int iN = 0; iN < dofs; ++iN) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	JIloc(iQ,iN) = Jk(iQ,iK)*InterpV(iQ,iN);
+      }
+    }
+    
+    // Mloc = Interp'*W*Jk*Interp
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		dofs, dofs, nQV, 1.0, InterpW.data(), nQV,
+		JIloc.data(), nQV, 0.0, Mloc.data(), dofs);
+    
+    // Mu = Mloc*u
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		dofs, nStates, dofs, 1.0, Mloc.data(), dofs,
+		&uCurr(0,0,iK), dofs, 0.0, Mu.data(), dofs);
+    
+    // L2Norm = Mu'*u
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+		nStates, nStates, dofs, 1.0, Mu.data(), dofs,
+		&uCurr(0,0,iK), dofs, 0.0, norms.data(), nStates);
+    
+    // Add local contribution to norm
+    for (int iS = 0; iS < nStates; ++iS) {
+      l2Norms(iS) += norms(iS,iS);
+    }
+    
+  }
+  
+  return max(l2Norms);
+  
+}
+
+/**
+   Compute the Inf error ||u-uTrue||_{\infty} of a function defined at the nodes.
+   Reuses the storage in uTrue to compute this error.
+*/
+double Solver::computeInfError(const darray& uCurr, darray& uTrue) const {
+  
+  for (int iK = 0; iK < mesh.nElements; ++iK) {
+    for (int iS = 0; iS < nStates; ++iS) {
+      for (int iN = 0; iN < dofs; ++iN) {
+	uTrue(iN,iS,iK) -= uCurr(iN,iS,iK);
+      }
+    }
+  }
+  
+  return computeInfNorm(uTrue);
+  
+}
+
+/**
+   Compute the infinity-norm ||u||_{\infty} of a function defined at the nodes.
+   Norm = max(abs(u))
+*/
+double Solver::computeInfNorm(const darray& uCurr) const {
+  return infnorm(uCurr);
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////
+// Functions specific to elastic physics
 //////////////////////////////////////////////////////////////////////////////////
 
 
@@ -921,14 +992,6 @@ inline void Solver::fluxC(const darray& uK, darray& fluxes, double lambda, doubl
   fluxes(nstrains+0,1) = -(2*mu)*uK(2);
   fluxes(nstrains+1,0) = -(2*mu)*uK(2);
   fluxes(nstrains+1,1) = -(lambda+2*mu)*uK(1) - lambda*uK(0);
-  
-  /*
-  // Convection-diffusion along each dimension
-  fluxes.fill(0.0);
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    fluxes(l,l) = p.a[l]*uK(l);
-  }
-  */
   
 }
 
@@ -1010,23 +1073,6 @@ void Solver::numericalFluxC(const darray& uN, const darray& uK,
     }
   }
   
-  /*
-  // Upwinding for convection-diffusion in 3 dimensions
-  darray FK{nStates,Mesh::DIM};
-  darray FN{nStates,Mesh::DIM};
-  
-  fluxC(uK, FK);
-  fluxC(uN, FN);
-  
-  fluxes.fill(0.0);
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    for (int iS = 0; iS < nStates; ++iS) {
-      // upwinding assuming a[l] is always positive
-      fluxes(iS) += (normalK(l) > 0.0 ? FK(iS, l) : FN(iS, l))*normalK(l);
-    }
-  }
-  */
-  
 }
 
 /**
@@ -1052,104 +1098,3 @@ void Solver::computePressure(const darray& uInterpV, darray& pressure) const {
   
 }
 
-
-/**
-   Compute the L2 error ||u-uTrue||_{L^2} of a function defined at the nodes.
-   Reuses the storage in uTrue to compute this error.
-*/
-double Solver::computeL2Error(const darray& uCurr, darray& uTrue) const {
-  
-  for (int iK = 0; iK < mesh.nElements; ++iK) {
-    for (int iS = 0; iS < nStates; ++iS) {
-      for (int iN = 0; iN < dofs; ++iN) {
-	uTrue(iN,iS,iK) -= uCurr(iN,iS,iK);
-      }
-    }
-  }
-  
-  return computeL2Norm(uTrue);
-}
-
-/**
-   Compute the L2 norm ||u||_{L^2} of a function defined at the nodes.
-   Norm = u'*Mel*u
-*/
-double Solver::computeL2Norm(const darray& uCurr) const {
-  
-  darray Mloc{dofs, dofs};
-  darray JIloc{nQV, dofs};
-  darray Mu{dofs,nStates};
-  darray norms{nStates, nStates}; // diagonal contains L2Norm of each state
-  darray l2Norms{nStates};
-  
-  for (int iS = 0; iS < nStates; ++iS) {
-    l2Norms(iS) = 0.0;
-  }
-  
-  // Add local contribution to norm at each element
-  for (int iK = 0; iK < mesh.nElements; ++iK) {
-    
-    // Compute Jacobian = det(Jacobian(Tk))
-    double Jacobian = 1.0;
-    for (int l = 0; l < Mesh::DIM; ++l) {
-      Jacobian *= mesh.tempMapping(l,0,iK);
-    }
-    
-    // JIloc = Jk*Interp
-    for (int iN = 0; iN < dofs; ++iN) {
-      for (int iQ = 0; iQ < nQV; ++iQ) {
-	JIloc(iQ,iN) = Jacobian*InterpV(iQ,iN);
-      }
-    }
-    
-    // Mloc = Interp'*W*Jk*Interp
-    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		dofs, dofs, nQV, 1.0, InterpW.data(), nQV,
-		JIloc.data(), nQV, 0.0, Mloc.data(), dofs);
-    
-    // Mu = Mloc*u
-    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		dofs, nStates, dofs, 1.0, Mloc.data(), dofs,
-		&uCurr(0,0,iK), dofs, 0.0, Mu.data(), dofs);
-    
-    // L2Norm = Mu'*u
-    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		nStates, nStates, dofs, 1.0, Mu.data(), dofs,
-		&uCurr(0,0,iK), dofs, 0.0, norms.data(), nStates);
-    
-    // Add local contribution to norm
-    for (int iS = 0; iS < nStates; ++iS) {
-      l2Norms(iS) += norms(iS,iS);
-    }
-    
-  }
-  
-  return max(l2Norms);
-  
-}
-
-/**
-   Compute the Inf error ||u-uTrue||_{\infty} of a function defined at the nodes.
-   Reuses the storage in uTrue to compute this error.
-*/
-double Solver::computeInfError(const darray& uCurr, darray& uTrue) const {
-  
-  for (int iK = 0; iK < mesh.nElements; ++iK) {
-    for (int iS = 0; iS < nStates; ++iS) {
-      for (int iN = 0; iN < dofs; ++iN) {
-	uTrue(iN,iS,iK) -= uCurr(iN,iS,iK);
-      }
-    }
-  }
-  
-  return computeInfNorm(uTrue);
-  
-}
-
-/**
-   Compute the infinity-norm ||u||_{\infty} of a function defined at the nodes.
-   Norm = max(abs(u))
-*/
-double Solver::computeInfNorm(const darray& uCurr) const {
-  return infnorm(uCurr);
-}

@@ -713,3 +713,127 @@ void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTER
 	      coeffsPhi.data(), nFrom, 0.0, INTERP.data(), nTo);
   
 }
+
+/**
+   Computes the derivative of the basis functions defined by 1D points on another set of 1D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define an interval.
+   Points interpolating onto can be of any size, but must be defined on that same interval.
+*/
+void dPhi1D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
+  
+  // Create nodal representation of the reference bases
+  int order = xFrom.size(1) - 1; // Assumes order = (size of xFrom)-1
+  int dim = 1;
+  
+  int nFrom = xFrom.size(1);
+  darray lFrom;
+  legendre(order, xFrom, lFrom);
+  
+  darray coeffsPhi{order+1,order+1};
+  for (int ipx = 0; ipx <= order; ++ipx) {
+    coeffsPhi(ipx,ipx) = 1.0;
+  }
+  lapack_int ipiv[nFrom];
+  LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  
+  // Compute derivative of reference bases on the output points
+  int nTo = xTo.size(1);
+  darray lTo, dlTo;
+  legendre(order, xTo, lTo);
+  dlegendre(order, xTo, lTo, dlTo);
+  
+  // Construct gradient of phi = dlTo*coeffsPhi
+  dPhiTo.realloc(nTo, nFrom, dim);
+  for (int l = 0; l < dim; ++l) {
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,l), nTo, 
+		coeffsPhi.data(), nFrom, 0.0, &dPhiTo(0,0,l), nTo);
+  }
+  
+}
+
+/**
+   Computes the gradient of the basis functions defined by 2D points on another set of 2D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a square.
+   Points interpolating onto can be of any size, but must be defined on that same square.
+*/
+void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
+  
+  // Create nodal representation of the reference bases
+  int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
+  int dim = 2;
+  
+  int nFrom = xFrom.size(1)*xFrom.size(2);
+  darray lFrom;
+  legendre2D(order, xFrom, lFrom);
+  
+  darray coeffsPhi{order+1,order+1,order+1,order+1};
+  for (int ipy = 0; ipy <= order; ++ipy) {
+    for (int ipx = 0; ipx <= order; ++ipx) {
+      coeffsPhi(ipx,ipy,ipx,ipy) = 1.0;
+    }
+  }
+  lapack_int ipiv[nFrom];
+  LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  
+  // Compute gradient of reference bases on the output points
+  int nTo = xTo.size(1)*xTo.size(2);
+  darray dlTo;
+  dlegendre2D(order, xTo, dlTo);
+  
+  // Construct gradient of phi = dlTo*coeffsPhi
+  dPhiTo.realloc(nTo, nFrom, dim);
+  for (int l = 0; l < dim; ++l) {
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,l), nTo, 
+		coeffsPhi.data(), nFrom, 0.0, &dPhiTo(0,0,l), nTo);
+  }
+  
+}
+
+/**
+   Computes the gradient of the basis functions defined by 3D points on another set of 3D points.
+   Assumes that points interpolating from provide enough accuracy (aka - 
+   they are well spaced out and of high enough order), and define a cube.
+   Points interpolating onto can be of any size, but must be defined on that same cube.
+*/
+void dPhi3D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
+  
+  // Create nodal representation of the reference bases
+  int order = xFrom.size(1) - 1; // Assumes order = (size of each dimension of xFrom)-1
+  int dim = 3;
+  
+  int nFrom = xFrom.size(1)*xFrom.size(2)*xFrom.size(3);
+  darray lFrom;
+  legendre3D(order, xFrom, lFrom);
+  
+  darray coeffsPhi{order+1,order+1,order+1,order+1,order+1,order+1};
+  for (int ipz = 0; ipz <= order; ++ipz) {
+    for (int ipy = 0; ipy <= order; ++ipy) {
+      for (int ipx = 0; ipx <= order; ++ipx) {
+	coeffsPhi(ipx,ipy,ipz,ipx,ipy,ipz) = 1.0;
+      }
+    }
+  }
+  lapack_int ipiv[nFrom];
+  LAPACKE_dgesv(LAPACK_COL_MAJOR, nFrom, nFrom, 
+		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
+  
+  // Compute gradient of reference bases on the output points
+  int nTo = xTo.size(1)*xTo.size(2)*xTo.size(3);
+  darray dlTo;
+  dlegendre3D(order, xTo, dlTo);
+  
+  // Construct gradient of phi = dlTo*coeffsPhi
+  dPhiTo.realloc(nTo, nFrom, dim);
+  for (int l = 0; l < dim; ++l) {
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,l), nTo, 
+		coeffsPhi.data(), nFrom, 0.0, &dPhiTo(0,0,l), nTo);
+  }
+  
+}
