@@ -306,8 +306,8 @@ void Mesh::defaultSquare(int nx, int ny) {
   nGElements = 0;
   mpiNBElems.realloc(MPIUtil::N_FACES);
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
-    mpiNBElems(iF) = 0;
-    /* necessary for periodic BCs
+    //mpiNBElems(iF) = 0;
+    //* necessary for periodic BCs
     mpiNBElems(iF) = 1;
     for (int l = 0; l < MPIUtil::DIM; ++l) {
       if (l != iF/2) {
@@ -315,7 +315,7 @@ void Mesh::defaultSquare(int nx, int ny) {
       }
     }
     nGElements += mpiNBElems(iF);
-    */
+    //*/
   }
   
   nVertices  = (localNs[0]+1)*(localNs[1]+1);
@@ -422,11 +422,12 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       // Neighbor elements in -x,+x,-y,+y directions stored in faces
       if (face0) {
-	eToE(0, eIndex) = static_cast<int>(Boundary::absorbing);
+	// Apply absorbing boundary condition at -x boundary
+	//eToE(0, eIndex) = static_cast<int>(Boundary::absorbing);
 	
-	//int ghostNum = iy;
-	//eToE(0, eIndex) = faceOffsets(0)+ghostNum;
-	//mpibeToE(ghostNum, 0) = eIndex;
+	int ghostNum = iy;
+	eToE(0, eIndex) = faceOffsets(0)+ghostNum;
+	mpibeToE(ghostNum, 0) = eIndex;
       }
       else {
 	eToE(0, eIndex) = ixM+iy0;
@@ -434,11 +435,11 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       if (face1) {
 	// Apply absorbing boundary condition at +x boundary
-	eToE(1, eIndex) = static_cast<int>(Boundary::absorbing);
+	//eToE(1, eIndex) = static_cast<int>(Boundary::absorbing);
 	
-	//int ghostNum = iy;
-	//eToE(1, eIndex) = faceOffsets(1)+ghostNum;
-	//mpibeToE(ghostNum, 1) = eIndex;
+	int ghostNum = iy;
+	eToE(1, eIndex) = faceOffsets(1)+ghostNum;
+	mpibeToE(ghostNum, 1) = eIndex;
       }
       else {
 	eToE(1, eIndex) = ixP+iy0;
@@ -446,11 +447,11 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       if (face2) {
 	// Apply absorbing boundary condition at -y boundary
-	eToE(2, eIndex) = static_cast<int>(Boundary::absorbing);
+	//eToE(2, eIndex) = static_cast<int>(Boundary::absorbing);
 	
-	//int ghostNum = ix;
-	//eToE(2, eIndex) = faceOffsets(2)+ghostNum;
-	//mpibeToE(ghostNum, 2) = eIndex;
+	int ghostNum = ix;
+	eToE(2, eIndex) = faceOffsets(2)+ghostNum;
+	mpibeToE(ghostNum, 2) = eIndex;
       }
       else {
 	eToE(2, eIndex) = ix0+iyM;
@@ -458,11 +459,11 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       if (face3) {
 	// Apply free-surface boundary condition at +y boundary
-	eToE(3, eIndex) = static_cast<int>(Boundary::free);
+	//eToE(3, eIndex) = static_cast<int>(Boundary::free);
 	
-	//int ghostNum = ix;
-	//eToE(3, eIndex) = faceOffsets(3)+ghostNum;
-	//mpibeToE(ghostNum, 3) = eIndex;
+	int ghostNum = ix;
+	eToE(3, eIndex) = faceOffsets(3)+ghostNum;
+	mpibeToE(ghostNum, 3) = eIndex;
       }
       else {
 	eToE(3, eIndex) = ix0+iyP;
@@ -664,7 +665,7 @@ int Mesh::initFaceMap(iarray& efMap, int size1D) {
    calculated at the quadrature points xQV
    within the volume stored in Jk and along the faces stored in JkF
 */
-void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk,
+void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
 			  int nQF, const darray& xQF, darray& JkF) const {
   
   int mapOrder = 1;
@@ -710,6 +711,7 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk,
   darray JacobianKF{nQF,N_FACES, DIM, DIM};
   Jk.realloc(nQV,nElements);
   JkF.realloc(nQF,N_FACES,nElements);
+  JkInv.realloc(DIM,DIM, nQV,nElements);
   
   for (int iK = 0; iK < nElements; ++iK) {
     
@@ -724,9 +726,23 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk,
     }
     
     // Compute Jk = |det(Jacobian)| at each quadrature point
+    // and JkInv  = Jacobian^{-1} at each quadarture point
     for (int iQ = 0; iQ < nQV; ++iQ) {
       Jk(iQ,iK) = JacobianK(iQ,0,0)*JacobianK(iQ,1,1) 
 	        - JacobianK(iQ,1,0)*JacobianK(iQ,0,1);
+#ifdef DEBUG
+      double eps = 1e-16;
+      if (std::abs(Jk(iQ,iK)) < eps) {
+	std::cerr << "ERROR: Jacobian = 0 for mapping of mesh element " << iK << "!" << std::endl;
+	mpi.exit(-1);
+      }
+#endif
+      
+      JkInv(0,0,iQ,iK) =  JacobianK(iQ,1,1)/Jk(iQ,iK);
+      JkInv(1,0,iQ,iK) = -JacobianK(iQ,1,0)/Jk(iQ,iK);
+      JkInv(0,1,iQ,iK) = -JacobianK(iQ,0,1)/Jk(iQ,iK);
+      JkInv(1,1,iQ,iK) =  JacobianK(iQ,0,0)/Jk(iQ,iK);
+      
       Jk(iQ,iK) = std::abs(Jk(iQ,iK));
     }
     

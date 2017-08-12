@@ -318,11 +318,11 @@ void dlegendre(int p, const darray& x, const darray& polys, darray& dpolys) {
   int nx = x.size(1);
   if (p < 0) {
     std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
-    dpolys.realloc(nx, 1);
+    dpolys.realloc(nx, 1, 1);
     return;
   }
   
-  dpolys.realloc(nx, p+1);
+  dpolys.realloc(nx, p+1, 1);
   
   // Initialize dp_0(x) = 0
   for (int i = 0; i < nx; ++i) {
@@ -789,7 +789,7 @@ void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
   dPhiTo.realloc(nTo, nFrom, dim);
   for (int l = 0; l < dim; ++l) {
     cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,l), nTo, 
+		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,0,l), nTo, 
 		coeffsPhi.data(), nFrom, 0.0, &dPhiTo(0,0,l), nTo);
   }
   
@@ -832,7 +832,7 @@ void dPhi3D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
   dPhiTo.realloc(nTo, nFrom, dim);
   for (int l = 0; l < dim; ++l) {
     cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,l), nTo, 
+		nTo, nFrom, nFrom, 1.0, &dlTo(0,0,0,0,l), nTo, 
 		coeffsPhi.data(), nFrom, 0.0, &dPhiTo(0,0,l), nTo);
   }
   

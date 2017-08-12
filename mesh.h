@@ -90,7 +90,7 @@ public:
      calculated at the quadrature points xQV
      within the volume stored in Jk and along the faces stored in JkF
   */
-  void setupJacobians(int nQV, const darray& xQV, darray& Jk,
+  void setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
 		      int nQF, const darray& xQF, darray& JkF) const;
   
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
@@ -206,12 +206,6 @@ public:
      x_l = sum(bilinearMapping(:,l,k)*phi(xi_l,:))
   */
   darray bilinearMapping;
-  /**
-     temporary mapping Tk at each element:
-     For every element k, dimension l
-     x_l = tempMapping(0,l,k)*xi_l + tempMapping(1,l,k)
-  */
-  darray tempMapping;
   
   /**
      element-face-to-node map:

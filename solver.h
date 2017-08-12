@@ -57,8 +57,9 @@ private:
   darray InterpTk;  // Interpolates bilinear map Tk to volume nodes
   darray InterpTkQ; // Interpolates bilinear map Tk to volume quadrature pts
   
-  darray Jk;  // |det(Jacobian(Tk))| at each volume quadrature point
-  darray JkF; // |det(Jacobian(Tk))| at each face quadrature point
+  darray Jk;    // |det(Jacobian(Tk))| at each volume quadrature point
+  darray JkInv; // Jacobian(Tk)^{-1}   at each volume quadrature point
+  darray JkF;   // |det(Jacobian(Tk))| at each face quadrature point
   
   darray u;
   

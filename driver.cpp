@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing mesh..." << std::endl;
   }
-#define USING_MESH 0
+//#define USING_MESH 1
 #ifdef USING_MESH
   std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/square.msh"};
   Mesh mesh{mshFile, mpi};
@@ -61,6 +61,7 @@ int main(int argc, char *argv[]) {
 #ifdef USING_MESH
     std::cout << "Loaded mesh = " << mshFile << std::endl;
 #else
+    std::cout << "square domain: " << botLeft << ", " << topRight << std::endl;
     std::cout << "nx = " << nx << std::endl;
 #endif
   }

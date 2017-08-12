@@ -33,6 +33,9 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   InterpW{},
   InterpTk{},
   InterpTkQ{},
+  Jk{},
+  JkInv{},
+  JkF{},
   u{},
   p{}
 {
@@ -47,7 +50,7 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   precomputeInterpMatrices(); // sets nQ*,xQ*,wQ*,Interp*
   mesh.setupNodes(InterpTk, order);
   mesh.setupQuads(InterpTkQ, nQV);
-  mesh.setupJacobians(nQV, xQV, Jk, nQF, xQF, JkF);
+  mesh.setupJacobians(nQV, xQV, Jk, JkInv, nQF, xQF, JkF);
   mpi.initDatatype(nQF);
   mpi.initFaces(Mesh::N_FACES);
   
@@ -389,6 +392,12 @@ void Solver::dgTimeStep() {
       if (!success)
 	mpi.exit(-1);
       
+      // Compute error
+      trueSolution(uTrue, iTime*dt);
+      double error = computeL2Error(u, uTrue);
+      std::cout << "L2 error = " << error << std::endl;
+      
+      // Sanity check
       double norm = computeL2Norm(u);
       std::cout << "L2 norm = " << norm << std::endl;
       if (std::isnan(norm)) {
@@ -655,22 +664,25 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
   
 }
 
-/** Evaluates the volume integral term for convection in the RHS */
+/** Evaluates K(u) = the volume integral term for convection in the RHS */
 void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
   
   // Contains all flux information
   darray fc{nQV, nStates, Mesh::DIM};
-  // JKel = Jk*W*dPhi_l
-  darray localJKel{nQV,dofs};
+  // JKel = Jk*W*dPhi
+  darray localJKel{nQV, dofs, Mesh::DIM};
+  // gradPhi = Jk*W*dPhi*JkInv
+  darray gradPhi{nQV, dofs, Mesh::DIM};
   
   // Temporary arrays for computing fluxes
   darray fluxes{nStates, Mesh::DIM};
   darray uK{nStates};
   
-  // Loop over all elements, points
+  // Loop over all elements
   for (int iK = 0; iK < mesh.nElements; ++iK) {
+    
+    // Evaluate F(uInterpV)
     for (int iQ = 0; iQ < nQV; ++iQ) {
-      
       // Copy data into uK
       for (int iS = 0; iS < nStates; ++iS) {
 	uK(iS) = uInterpV(iQ,iS,iK);
@@ -683,23 +695,32 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
 	  fc(iQ,iS,l) = fluxes(iS,l);
 	}
       }
-      
     }
     
+    // localJKel = Jk*W*dPhi
     for (int l = 0; l < Mesh::DIM; ++l) {
-      
-      // localJKel = Jk*W*dPhi_l
       for (int iN = 0; iN < dofs; ++iN) {
 	for (int iQ = 0; iQ < nQV; ++iQ) {
-	  localJKel(iQ,iN) = Jk(iQ,iK)*Kels(iQ,iN,l);
+	  localJKel(iQ,iN,l) = Jk(iQ,iK)*Kels(iQ,iN,l);
 	}
       }
-      
-      // residual += localJKel_l*fc_l(uInterpV)
+    }
+    
+    // Multiply by DIM x DIM JkInv - Can we make more cache friendly?
+    for (int iN = 0; iN < dofs; ++iN) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	gradPhi(iQ,iN,0) = localJKel(iQ,iN,0)*JkInv(0,0,iQ,iK)
+	  + localJKel(iQ,iN,1)*JkInv(1,0,iQ,iK);
+	gradPhi(iQ,iN,1) = localJKel(iQ,iN,0)*JkInv(0,1,iQ,iK)
+	  + localJKel(iQ,iN,1)*JkInv(1,1,iQ,iK);
+      }
+    }
+    
+    // residual += gradPhi_l*fc_l(uInterpV)
+    for (int l = 0; l < Mesh::DIM; ++l) {
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		  dofs, nStates, nQV, 1.0, localJKel.data(), nQV,
+		  dofs, nStates, nQV, 1.0, &gradPhi(0,0,l), nQV,
 		  &fc(0,0,l), nQV, 1.0, &residual(0,0,iK), dofs);
-      
     }
   }
   
