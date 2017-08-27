@@ -20,7 +20,8 @@
    Reads an input .msh file (output from Gmsh) and initializes several key parameters of mesh.h
 */
 bool readMesh(const std::string& filename, int dim, int n_vertices,
-	      int& nVertices, int& nElements, darray& vertices, iarray& eToV);
+	      int& nVertices, int& nElements, darray& vertices,
+	      iarray& eToV, iarray& periodicity);
 
 /**
    Reads in the material properties from files

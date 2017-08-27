@@ -20,9 +20,10 @@ int main(int argc, char *argv[]) {
   if (mpi.rank == mpi.ROOT) {
     std::cout << "Initializing mesh..." << std::endl;
   }
-//#define USING_MESH 1
+#define USING_MESH 1
 #ifdef USING_MESH
-  std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/square.msh"};
+  //std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/unitSquare.msh"};
+  std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/mySquareX.msh"};
   Mesh mesh{mshFile, mpi};
 #else
   /*
@@ -33,8 +34,11 @@ int main(int argc, char *argv[]) {
   */
   Point botLeft{0.0, 0.0};
   Point topRight{1.0, 1.0};
-  int nx = 8;
+  int nx = 10;
   Mesh mesh{nx, nx, botLeft, topRight, mpi};
+  
+  std::string outputFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/output/mySquare.msh"};
+  mesh.outputMesh(outputFile, nx, nx);
 #endif
   
   // Initialize sources
@@ -53,8 +57,12 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing solver..." << std::endl;
   }
   int order = 4;
+  // TODO: debugging
   double tf = 0.1;
   double dtSnap = 0.005;
+  //double tf = 0.002;
+  //double dtSnap = 0.00025;
+  
   if (mpi.rank == mpi.ROOT) {
     std::cout << "order = " << order << std::endl;
     std::cout << "tf = " << tf << std::endl;

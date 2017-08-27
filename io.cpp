@@ -6,7 +6,8 @@
    Returns true or false based off of success of reading file
 */
 bool readMesh(const std::string& filename, int dim, int n_vertices,
-	      int& nVertices, int& nElements, darray& vertices, iarray& eToV) {
+	      int& nVertices, int& nElements, darray& vertices,
+	      iarray& eToV, iarray& periodicity) {
 
   std::ifstream mshFile(filename, std::ios::in);
   if (mshFile.fail()) {
@@ -68,6 +69,60 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
     }
   }
   
+  // Skip more header information
+  while(std::getline(mshFile, nextLine)) {
+    if (nextLine == "$Periodic")
+      break;
+  }
+  
+  // Read in periodic information
+  periodicity.realloc(nVertices);
+  for (int i = 0; i < nVertices; ++i) {
+    periodicity(i) = i;
+  }
+  
+  int nPeriodic, nNodes;
+  int dimension, slave, master;
+  
+  mshFile >> nPeriodic;
+  for (int i = 0; i < nPeriodic; ++i) {
+    mshFile >> dimension >> slave >> master;
+    
+    mshFile >> nNodes;
+    switch(dimension) {
+    case 0: {
+      // combining end vertices
+      for (int j = 0; j < nNodes; ++j) {
+	mshFile >> slave >> master;
+	periodicity(slave-1) = master-1;
+      }
+      break;
+    }
+    case 1: {
+      // combining vertices on edges
+      for (int j = 0; j < nNodes; ++j) {
+	mshFile >> slave >> master;
+	periodicity(slave-1) = master-1;
+      }
+      break;
+    }
+    case 2: {
+      // combining vertices on faces
+      std::cout << "ERROR: I have not programmed periodic faces!" << std::endl;
+      for (int j = 0; j < nNodes; ++j) { // TODO: is this correct?
+	mshFile >> slave >> master;
+	periodicity(slave-1) = master-1;
+      }
+      return false;
+      break;
+    }
+    default: {
+      std::cerr << "ERROR: incorrect periodic information!" << std::endl;
+      return false;
+    }
+    }
+    
+  }
   return true;
   
 }

@@ -109,17 +109,22 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   efToN{},
   efToQ{}
 {
-
-  // Read mesh from file
-  readMesh(filename, DIM, N_VERTICES,
-  	   nVertices, nElements, vertices, eToV);
   
-  // Label faces of rectangle according to vertices
-  fToV.realloc(N_FVERTICES,N_FACES);
-  for (int iF = 0; iF < N_FACES; ++iF) {
-    fToV(0,iF) = iF;
-    fToV(1,iF) = (iF+1 == N_FACES ? 0 : iF+1);
+  // Read mesh from file
+  iarray periodicity;
+  bool success = readMesh(filename, DIM, N_VERTICES,
+  	   nVertices, nElements, vertices, eToV, periodicity);
+  if (!success) {
+    mpi.exit(-1);
   }
+  
+  initFToV();
+  initBilinearMappings();
+  initNormals();
+  
+  // Must be done after initializing normals and bilinear maps
+  resolvePeriodicities(periodicity);
+  
   
   // TODO: make this MPI compatible
   nIElements = nElements;
@@ -136,136 +141,8 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   }
   mpibeToE.realloc(max(mpiNBElems), MPIUtil::N_FACES);
   
-  // sequential O(n^2) method for determining eToE/eToF
-  eToE.realloc(N_FACES, nElements);
-  eToF.realloc(N_FACES, nElements);
-  barray facesSeen{N_FACES, nElements};
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int iF = 0; iF < N_FACES; ++iF) {
-      facesSeen(iF,iK) = false;
-    }
-  }
-  
-  // Loop over all of the element/faces
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int iF = 0; iF < N_FACES; ++iF) {
-      if (facesSeen(iF,iK)) {
-	continue;
-      } else {
-	facesSeen(iF,iK) = true;
-      }
-      // Visiting this current element/face
-      std::set<int> iFace;
-      for (int iFV = 0; iFV < N_FVERTICES; ++iFV) {
-	iFace.insert(eToV(fToV(iFV,iF),iK));
-      }
-      
-      bool boundary = true;
-      
-      // Compare with all of the element/faces
-      for (int nK = 0; nK < nElements; ++nK) {
-	for (int nF = 0; nF < N_FACES; ++nF) {
-	  if (facesSeen(nF,nK))
-	    continue;
-	  
-	  std::set<int> nFace;
-	  for (int nFV = 0; nFV < N_FVERTICES; ++nFV) {
-	    nFace.insert(eToV(fToV(nFV,nF),nK));
-	  }
-	  
-	  if (iFace == nFace) {
-	    // Link both elements
-	    eToE(iF,iK) = nK;
-	    eToE(nF,nK) = iK;
-	    
-	    eToF(iF,iK) = nF;
-	    eToF(nF,nK) = iF;
-	    
-	    facesSeen(nF,nK) = true;
-	    
-	    boundary = false;
-	    break;
-	  }
-	  
-	}
-	if (!boundary)
-	  break;
-      }
-      
-      if (boundary) {
-	
-	double y1 = vertices(1, eToV(fToV(0,iF), iK));
-	double y2 = vertices(1, eToV(fToV(1,iF), iK));
-	if (y1 == 0.0 && y2 == 0.0) {
-	  // north face has free surface condition
-	  eToE(iF,iK) = static_cast<int>(Boundary::free);
-	}
-	else {
-	  // all other sides have absorbing BC
-	  eToE(iF,iK) = static_cast<int>(Boundary::absorbing);
-	}
-	eToF(iF,iK) = -1; // not to be accessed
-	
-      }
-      
-    }
-  }
-  
-  // Initialize bilinear mappings
-  int mapOrder = 1;
-  int mapDofs = static_cast<int>(std::pow((mapOrder+1), DIM));
-  if (mapDofs != N_VERTICES) { // better be exactly equal to number of vertices
-    std::cerr << "FATAL ERROR: trying to initialize with a map with too high an order!" << std::endl;
-    mpi.exit(-1);
-  }
-  
-  // Gmsh =   3---2   Mapping =  2---3
-  // CCW      |   |   wants      |   |
-  // corners  0---1              0---1
-  darray c2m{N_VERTICES}; // corner to mapping
-  c2m(0) = 0; c2m(1) = 1;
-  c2m(2) = 3; c2m(3) = 2;
-  
-  bilinearMapping.realloc(N_VERTICES, DIM, nElements);
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int l = 0; l < DIM; ++l) {
-      for (int iV = 0; iV < N_VERTICES; ++iV) {
-	bilinearMapping(c2m(iV),l,iK) = vertices(l,eToV(iV,iK));
-      }
-    }
-  }
-  
-  // Initialize normals - assumes input 2D mesh is ordered counter-clockwise
-  // Simultaneously computes dxMin/dxMax
-  dxMin = std::numeric_limits<double>::max();
-  dxMax = 0.0;
-  
-  normals.realloc(DIM, N_FACES, nElements);
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int iF = 0; iF < N_FACES; ++iF) {
-      int a = fToV(0,iF);
-      int b = fToV(1,iF);
-      
-      double ABx = vertices(0,eToV(b,iK)) - vertices(0,eToV(a,iK));
-      double ABy = vertices(1,eToV(b,iK)) - vertices(1,eToV(a,iK));
-      double length = std::sqrt(ABx*ABx + ABy*ABy);
-      normals(0, iF, iK) = ABy/length;
-      normals(1, iF, iK) = -ABx/length;
-      
-      if (length > dxMax)
-	dxMax = length;
-      if (length < dxMin)
-	dxMin = length;
-      
-    }
-  }
-  
-  // TODO: with isoparametric mapping, normals should be at quadrature points
-  // look in 3dg/src/dgmodel.cpp/precomp_edgeJnn for how Per sets up 3dg's nns = normals(Mesh::DIM, nQF, N_FACES, nElements)
-  // called by 3dg/src/dgassemble.cpp/Tassemble::el_setup
-  
-  
-  
+  // Initialize eToE and eToF
+  initConnectivity();
   
 }
 
@@ -336,9 +213,6 @@ void Mesh::defaultSquare(int nx, int ny) {
   }
   vertices.resize(DIM, nVertices);
   
-  dxMin = std::min((topRight.x - botLeft.x)/nx, (topRight.y - botLeft.y)/ny);
-  dxMax = std::max((topRight.x - botLeft.x)/nx, (topRight.y - botLeft.y)/ny);
-  
   // Initialize elements-to-vertices array
   eToV.realloc(N_VERTICES, nElements);
   for (int iy = 0; iy < localNs[1]; ++iy) {
@@ -351,8 +225,8 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       eToV(0, eIndex) = xOff1+yOff1;
       eToV(1, eIndex) = xOff2+yOff1;
-      eToV(2, eIndex) = xOff1+yOff2;
-      eToV(3, eIndex) = xOff2+yOff2;
+      eToV(2, eIndex) = xOff2+yOff2;
+      eToV(3, eIndex) = xOff1+yOff2;
     }
   }
   
@@ -485,47 +359,20 @@ void Mesh::defaultSquare(int nx, int ny) {
     }
   }
   
-  // Initialize normals
-  normals.realloc(DIM, N_FACES, nElements);
-  for (int iy = 0; iy < localNs[1]; ++iy) {
-    for (int ix = 0; ix < localNs[0]; ++ix) {
-      int eIndex = ix + iy*localNs[0];
-      
-      // Note that normals is already filled with 0s
-      normals(0, 0, eIndex) = -1.0;
-      normals(0, 1, eIndex) = 1.0;
-      normals(1, 2, eIndex) = -1.0;
-      normals(1, 3, eIndex) = 1.0;
-      
-    }
-  }
+  // Modify fToV to handle default square face connectivity
+  fToV.realloc(N_FVERTICES, N_FACES);
+  fToV(0,0) = 3; // -x
+  fToV(1,0) = 0;
+  fToV(0,1) = 1; // +x
+  fToV(1,1) = 2;
+  fToV(0,2) = 0; // -y
+  fToV(1,2) = 1;
+  fToV(0,3) = 2; // +y
+  fToV(1,3) = 3;
   
-  /*
-  // Temporary bad mapping, 0 == scaling factor, 1 == translation
-  tempMapping.realloc(DIM, 2, nElements);
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int l = 0; l < DIM; ++l) {
-      double x0 = vertices(l, eToV(0,iK));
-      double x1 = vertices(l, eToV(N_VERTICES-1,iK));
-      double dx = x1 - x0;
-      
-      tempMapping(0,l,iK) = dx/2.0;
-      tempMapping(1,l,iK) = x0+dx/2.0;
-    }
-  }
-  */
+  initBilinearMappings();
   
-  // Mapping =  2---3
-  // wants      |   |
-  //            0---1
-  bilinearMapping.realloc(N_VERTICES, DIM, nElements);
-  for (int iK = 0; iK < nElements; ++iK) {
-    for (int l = 0; l < DIM; ++l) {
-      for (int iV = 0; iV < N_VERTICES; ++iV) {
-	bilinearMapping(iV,l,iK) = vertices(l,eToV(iV,iK));
-      }
-    }
-  }
+  initNormals();
   
 }
 
@@ -558,6 +405,189 @@ Mesh::Mesh(const Mesh& other) :
   efToN{other.efToN},
   efToQ{other.efToQ}
 { }
+
+/** Label faces of rectangle according to vertices */
+void Mesh::initFToV() {
+  
+  // Assumes input points are CCW
+  fToV.realloc(N_FVERTICES,N_FACES);
+  for (int iF = 0; iF < N_FACES; ++iF) {
+    fToV(0,iF) = iF;
+    fToV(1,iF) = (iF+1 == N_FACES ? 0 : iF+1);
+  }
+  
+}
+
+/** Initialize bilinear mappings from element coordinates */
+void Mesh::initBilinearMappings() {
+  
+  // Sanity check: mapping works with this element type
+  int mapOrder = 1;
+  int mapDofs = static_cast<int>(std::pow((mapOrder+1), DIM));
+  if (mapDofs != N_VERTICES) { // better be exactly equal to number of vertices
+    std::cerr << "FATAL ERROR: trying to initialize with a map with too high an order!" << std::endl;
+    mpi.exit(-1);
+  }
+  
+  // Gmsh =   3---2   Mapping =  2---3
+  // CCW      |   |   wants      |   |
+  // corners  0---1              0---1
+  darray c2m{N_VERTICES}; // corner to mapping
+  c2m(0) = 0; c2m(1) = 1;
+  c2m(2) = 3; c2m(3) = 2;
+  
+  bilinearMapping.realloc(N_VERTICES, DIM, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int l = 0; l < DIM; ++l) {
+      for (int iV = 0; iV < N_VERTICES; ++iV) {
+	bilinearMapping(c2m(iV),l,iK) = vertices(l,eToV(iV,iK));
+      }
+    }
+  }
+  
+}
+
+/** Initialize normals from element coordinates. Assumes input 2D mesh is ordered CCW */
+void Mesh::initNormals() {
+  
+  // Simultaneously computes dxMin/dxMax
+  dxMin = std::numeric_limits<double>::max();
+  dxMax = 0.0;
+  
+  normals.realloc(DIM, N_FACES, nElements);
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      int a = fToV(0,iF);
+      int b = fToV(1,iF);
+      
+      double ABx = vertices(0,eToV(b,iK)) - vertices(0,eToV(a,iK));
+      double ABy = vertices(1,eToV(b,iK)) - vertices(1,eToV(a,iK));
+      double length = std::sqrt(ABx*ABx + ABy*ABy);
+      normals(0, iF, iK) = ABy/length;
+      normals(1, iF, iK) = -ABx/length;
+      
+      if (length > dxMax)
+	dxMax = length;
+      if (length < dxMin)
+	dxMin = length;
+      
+    }
+  }
+  
+  // TODO: with isoparametric mapping, normals should be at quadrature points
+  // look in 3dg/src/dgmodel.cpp/precomp_edgeJnn for how Per sets up 3dg's nns = normals(Mesh::DIM, nQF, N_FACES, nElements)
+  // called by 3dg/src/dgassemble.cpp/Tassemble::el_setup
+  
+}
+
+/** Resolve periodicities in eToV */
+void Mesh::resolvePeriodicities(const iarray& periodicity) {
+  
+  bool resolved = false;
+  while (!resolved) {
+    
+    resolved = true;
+    
+    for (int i = 0; i < nVertices; ++i) {
+      if (periodicity(i) != i) {
+	// Found a vertex renumbering based off of periodic BC
+	for (int iK = 0; iK < nElements; ++iK) {
+	  for (int iV = 0; iV < N_VERTICES; ++iV) {
+	    if (eToV(iV,iK) == i) {
+	      // Found a vertex in eToV that should be changed
+	      eToV(iV,iK) = periodicity(i);
+	      resolved = false;
+	    }
+	  }
+	}
+      }
+    }
+    
+  }
+  
+}
+
+/** Initialize connectivity in eToE and eToF */
+void Mesh::initConnectivity() {
+  
+  // sequential O(n^2) method for determining eToE/eToF
+  eToE.realloc(N_FACES, nElements);
+  eToF.realloc(N_FACES, nElements);
+  barray facesSeen{N_FACES, nElements};
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      facesSeen(iF,iK) = false;
+    }
+  }
+  
+  // Loop over all of the element/faces
+  for (int iK = 0; iK < nElements; ++iK) {
+    for (int iF = 0; iF < N_FACES; ++iF) {
+      if (facesSeen(iF,iK)) {
+	continue;
+      } else {
+	facesSeen(iF,iK) = true;
+      }
+      // Visiting this current element/face
+      std::set<int> iFace;
+      for (int iFV = 0; iFV < N_FVERTICES; ++iFV) {
+	iFace.insert(eToV(fToV(iFV,iF),iK));
+      }
+      
+      bool boundary = true;
+      
+      // Compare with all of the element/faces
+      for (int nK = 0; nK < nElements; ++nK) {
+	for (int nF = 0; nF < N_FACES; ++nF) {
+	  if (facesSeen(nF,nK))
+	    continue;
+	  
+	  std::set<int> nFace;
+	  for (int nFV = 0; nFV < N_FVERTICES; ++nFV) {
+	    nFace.insert(eToV(fToV(nFV,nF),nK));
+	  }
+	  
+	  if (iFace == nFace) {
+	    // Link both elements
+	    eToE(iF,iK) = nK;
+	    eToE(nF,nK) = iK;
+	    
+	    eToF(iF,iK) = nF;
+	    eToF(nF,nK) = iF;
+	    
+	    facesSeen(nF,nK) = true;
+	    
+	    boundary = false;
+	    break;
+	  }
+	  
+	}
+	if (!boundary)
+	  break;
+      }
+      
+      if (boundary) {
+	
+	std::cout << "found a boundary at " << iK << ", face " << iF << std::endl;
+	
+	double y1 = vertices(1, eToV(fToV(0,iF), iK));
+	double y2 = vertices(1, eToV(fToV(1,iF), iK));
+	if (y1 == 0.0 && y2 == 0.0) {
+	  // north face has free surface condition
+	  eToE(iF,iK) = static_cast<int>(Boundary::free);
+	}
+	else {
+	  // all other sides have absorbing BC
+	  eToE(iF,iK) = static_cast<int>(Boundary::absorbing);
+	}
+	eToF(iF,iK) = -1; // not to be accessed
+	
+      }
+      
+    }
+  }
+  
+}
 
 /** Initialize global nodes from bilinear mapping of reference nodes */
 void Mesh::setupNodes(const darray& InterpTk, int _order) {
@@ -624,32 +654,48 @@ int Mesh::initFaceMap(iarray& efMap, int size1D) {
   int xOff;
   int yOff;
   
-  // -x direction face
-  xOff = 0;
-  for (int iy = 0; iy < size1D; ++iy) {
-    yOff = iy*size1D;
-    efMap(iy, 0) = xOff+yOff;
-  }
-  
-  // +x direction face
-  xOff = size1D-1;
-  for (int iy = 0; iy < size1D; ++iy) {
-    yOff = iy*size1D;
-    efMap(iy, 1) = xOff+yOff;
-  }
-  
-  // -y direction face
-  yOff = 0;
-  for (int ix = 0; ix < size1D; ++ix) {
-    xOff = ix;
-    efMap(ix, 2) = xOff+yOff;
-  }
-  
-  // +y direction face
-  yOff = (size1D-1)*size1D;
-  for (int ix = 0; ix < size1D; ++ix) {
-    xOff = ix;
-    efMap(ix, 3) = xOff+yOff;
+  // efMap has explicit dependence on fToV
+  // Note: only handles CCW vertices/faces
+  // 3---2
+  // |   |
+  // 0---1
+  for (int iF = 0; iF < N_FACES; ++iF) {
+    if (fToV(0,iF) == 3 && fToV(1,iF) == 0) {
+      // -x direction face
+      xOff = 0;
+      for (int iy = 0; iy < size1D; ++iy) {
+	yOff = iy*size1D;
+	efMap(iy, iF) = xOff+yOff;
+      }
+    }
+    else if (fToV(0,iF) == 0 && fToV(1,iF) == 1) {
+      // -y direction face
+      yOff = 0;
+      for (int ix = 0; ix < size1D; ++ix) {
+	xOff = ix;
+	efMap(ix, iF) = xOff+yOff;
+      }
+    }
+    else if (fToV(0,iF) == 1 && fToV(1,iF) == 2) {
+      // +x direction face
+      xOff = size1D-1;
+      for (int iy = 0; iy < size1D; ++iy) {
+	yOff = iy*size1D;
+	efMap(iy, iF) = xOff+yOff;
+      }
+    }
+    else if (fToV(0,iF) == 2 && fToV(1,iF) == 3) {
+      // +y direction face
+      yOff = (size1D-1)*size1D;
+      for (int ix = 0; ix < size1D; ++ix) {
+	xOff = ix;
+	efMap(ix, iF) = xOff+yOff;
+      }
+    }
+    else {
+      std::cerr << "ERROR: Vertices for fToV are not CCW!" << std::endl;
+      mpi.exit(-1);
+    }
   }
   
   // Re-organize face nodes so they are accessible by one index
@@ -680,27 +726,43 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
   darray chebyTkF;
   chebyshev1D(mapOrder, chebyTkF);
   darray xQF2D{DIM, nQF, N_FACES};
-  // Below mappings based off of fToV implicitly. TODO: Make it explicit?
-  int iF = 0;
-  for (int iQ = 0; iQ < nQF; ++iQ) {
-    xQF2D(0,iQ,iF) = xQF(0,iQ);
-    xQF2D(1,iQ,iF) = chebyTkF(0,0); // along xi_1 = -1
+  
+  // Below mappings based off of fToV explicitly
+  for (int iF = 0; iF < N_FACES; ++iF) {
+    if (fToV(0,iF) == 3 && fToV(1,iF) == 0) {
+      // along xi_0 = -1
+      for (int iQ = 0; iQ < nQF; ++iQ) {
+	xQF2D(0,iQ,iF) = chebyTkF(0,0);
+	xQF2D(1,iQ,iF) = xQF(0,iQ);
+      }
+    }
+    else if (fToV(0,iF) == 0 && fToV(1,iF) == 1) {
+      // along xi_1 = -1
+      for (int iQ = 0; iQ < nQF; ++iQ) {
+	xQF2D(0,iQ,iF) = xQF(0,iQ);
+	xQF2D(1,iQ,iF) = chebyTkF(0,0);
+      }
+    }
+    else if (fToV(0,iF) == 1 && fToV(1,iF) == 2) {
+      // along xi_0 = 1
+      for (int iQ = 0; iQ < nQF; ++iQ) {
+	xQF2D(0,iQ,iF) = chebyTkF(0,1);
+	xQF2D(1,iQ,iF) = xQF(0,iQ);
+      }
+    }
+    else if (fToV(0,iF) == 2 && fToV(1,iF) == 3) {
+      // along xi_1 = 1
+      for (int iQ = 0; iQ < nQF; ++iQ) {
+	xQF2D(0,iQ,iF) = xQF(0,iQ);
+	xQF2D(1,iQ,iF) = chebyTkF(0,1);
+      }
+    }
+    else {
+      std::cerr << "ERROR: Vertices for fToV are not CCW!" << std::endl;
+      mpi.exit(-1);
+    }
   }
-  iF = 1;
-  for (int iQ = 0; iQ < nQF; ++iQ) {
-    xQF2D(0,iQ,iF) = chebyTkF(0,1); // along xi_0 = 1
-    xQF2D(1,iQ,iF) = xQF(0,iQ);
-  }
-  iF = 2;
-  for (int iQ = 0; iQ < nQF; ++iQ) {
-    xQF2D(0,iQ,iF) = xQF(0,iQ);
-    xQF2D(1,iQ,iF) = chebyTkF(0,1); // along xi_1 = 1
-  }
-  iF = 3;
-  for (int iQ = 0; iQ < nQF; ++iQ) {
-    xQF2D(0,iQ,iF) = chebyTkF(0,0); // along xi_0 = -1
-    xQF2D(1,iQ,iF) = xQF(0,iQ);
-  }
+  
   
   // Compute gradient of mapping reference bases on the face quadrature points
   darray dPhiTkQF;
@@ -758,13 +820,34 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
       }
     }
     
-    // TODO: think about this carefuly, should JkF = ||normal||?
+    // TODO: think about this carefully, should JkF = ||normal||?
     // 1D integral => Only have a |gamma'(t)| term along correct xi_{l_i}
     // Compute JkF = |gamma'(t)| along at each face quadrature point
+    int li;
     for (int iF = 0; iF < N_FACES; ++iF) {
+      
+      if (fToV(0,iF) == 3 && fToV(1,iF) == 0) {
+	// along xi_0 = -1
+	li = 1;
+      }
+      else if (fToV(0,iF) == 0 && fToV(1,iF) == 1) {
+	// along xi_1 = -1
+	li = 0;
+      }
+      else if (fToV(0,iF) == 1 && fToV(1,iF) == 2) {
+	// along xi_0 = 1
+	li = 1;
+      }
+      else if (fToV(0,iF) == 2 && fToV(1,iF) == 3) {
+	// along xi_1 = 1
+	li = 0;
+      }
+      else {
+	std::cerr << "ERROR: Vertices for fToV are not CCW!" << std::endl;
+	mpi.exit(-1);
+      }
+      
       for (int iQ = 0; iQ < nQF; ++iQ) {
-	// again, implicit dependence on fToV
-	int li = (iF % 2 == 0 ? 0 : 1);
 	JkF(iQ,iF,iK) = std::sqrt(JacobianKF(iQ,iF,li,0)*JacobianKF(iQ,iF,li,0) 
 				+ JacobianKF(iQ,iF,li,1)*JacobianKF(iQ,iF,li,1));
       }
@@ -774,6 +857,85 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
   
 }
 
+/** Writes mesh to example Gmsh 3.0 .msh file */
+void Mesh::outputMesh(const std::string& filename, int nx, int ny) const {
+  
+  std::ofstream mshFile(filename, std::ios::out);
+  if (mshFile.fail()) {
+    std::cerr << "ERROR: could not open output mesh " << filename << std::endl;
+  }
+  
+  mshFile << "$MeshFormat\n";
+  mshFile << "2.2 0 8\n";
+  mshFile << "$EndMeshFormat\n";
+  
+  // vertices
+  mshFile << "$Nodes\n";
+  mshFile << nVertices << "\n";
+  for (int i = 0; i < nVertices; ++i) {
+    mshFile << (i+1) << " " << vertices(0,i) << " " << vertices(1,i) << " " << "0\n";
+  }
+  mshFile << "$EndNodes\n";
+  
+  // elements (eToV)
+  mshFile << "$Elements\n";
+  mshFile << nElements << "\n";
+  for (int iK = 0; iK < nElements; ++iK) {
+    mshFile << (iK+1) << " " << "3 2 1 1 ";
+    
+    // Output element corners CCW according to fToV
+    int iFPrev = 0;
+    mshFile << (eToV(fToV(0,iFPrev),iK)+1) << " "
+	    << (eToV(fToV(1,iFPrev),iK)+1) << " ";
+    int facesVisited = 1;
+    while(facesVisited < N_FACES-1) {
+    
+      for (int iF = 0; iF < N_FACES; ++iF) {
+	if (eToV(fToV(0,iF),iK) == eToV(fToV(1,iFPrev),iK)) {
+	  mshFile << (eToV(fToV(1,iF),iK)+1) << " ";
+	  
+	  // move to next face
+	  iFPrev = iF;
+	  facesVisited++;
+	  break;
+	}
+      }
+      
+    }
+    mshFile << "\n";
+    
+  }
+  mshFile << "$EndElements\n";
+  
+  if (nx > 0 && ny > 0) {
+    // periodicity of the default square
+    iarray periodicity{2,nx+ny+2};
+    int iy0 = 0;
+    int iy1 = ny;
+    for (int ix = 0; ix <= nx; ++ix) {
+      periodicity(0,ix) = ix+iy0*(nx+1);
+      periodicity(1,ix) = ix+iy1*(nx+1);
+    }
+    int ix0 = 0;
+    int ix1 = nx;
+    for (int iy = 0; iy <= ny; ++iy) {
+      periodicity(0,nx+1+iy) = ix0+iy*(nx+1);
+      periodicity(1,nx+1+iy) = ix1+iy*(nx+1);
+    }
+    
+    mshFile << "$Periodic\n";
+    mshFile << "1\n";
+    mshFile << "0 1 2\n";
+    mshFile << periodicity.size(1) << "\n";
+    for (int i = 0; i < periodicity.size(1); ++i) {
+      mshFile << (periodicity(0,i)+1) << " " << (periodicity(1,i)+1) << "\n";
+    }
+    mshFile << "$EndPeriodic\n";
+  }
+  
+}
+
+/** Allows C++ command-line stream output */
 std::ostream& operator<<(std::ostream& out, const Mesh& mesh) {
   out << mesh.nVertices << " vertices connected with " << mesh.nElements << " elements." << std::endl;
   return out;

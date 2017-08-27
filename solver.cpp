@@ -167,19 +167,8 @@ void Solver::precomputeLocalMatrices() {
     }
   }
   
-  // Compute gradient of reference bases on the quadrature points
-  darray dPhiQ;
-  dPhi2D(refNodes, xQV, dPhiQ);
-  
-  // Initialize K matrices = dx_l(phi_i)*weights
-  Kels.realloc(nQV,dofs,Mesh::DIM);
-  for (int l = 0; l < Mesh::DIM; ++l) {
-    for (int iN = 0; iN < dofs; ++iN) {
-      for (int iQ = 0; iQ < nQV; ++iQ) {
-	Kels(iQ, iN, l) = dPhiQ(iQ,iN,l)*wQV(iQ);
-      }
-    }
-  }
+  // Compute Kels = gradient of reference bases on the quadrature points
+  dPhi2D(refNodes, xQV, Kels);
   
   // Initialize K matrix for use along faces
   KelsF.realloc(nQF,dofsF);
@@ -463,10 +452,10 @@ void Solver::rk4Rhs(const darray& uCurr, darray& uInterpF, darray& uInterpV,
   
   // ks(:,istage) = Mel\ks(:,istage)
   for (int iK = 0; iK < mesh.nElements; ++iK) {
-    for (int s = 0; s < nStates; ++s) {
+    for (int iS = 0; iS < nStates; ++iS) {
       LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'U', dofs, 1,
-		     &Mel(0,0,sToS(s),iK), dofs, &Mipiv(0,sToS(s),iK),
-		     &residual(0,s,iK), dofs);
+		     &Mel(0,0,sToS(iS),iK), dofs, &Mipiv(0,sToS(iS),iK),
+		     &residual(0,iS,iK), dofs);
     }
   }
   
@@ -669,9 +658,9 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
   
   // Contains all flux information
   darray fc{nQV, nStates, Mesh::DIM};
-  // JKel = Jk*W*dPhi
+  // localJKel = Jk*W*gradPhi
   darray localJKel{nQV, dofs, Mesh::DIM};
-  // gradPhi = Jk*W*dPhi*JkInv
+  // gradPhi = dPhi*JkInv
   darray gradPhi{nQV, dofs, Mesh::DIM};
   
   // Temporary arrays for computing fluxes
@@ -697,29 +686,29 @@ void Solver::convectDGVolume(const darray& uInterpV, darray& residual) const {
       }
     }
     
-    // localJKel = Jk*W*dPhi
-    for (int l = 0; l < Mesh::DIM; ++l) {
-      for (int iN = 0; iN < dofs; ++iN) {
-	for (int iQ = 0; iQ < nQV; ++iQ) {
-	  localJKel(iQ,iN,l) = Jk(iQ,iK)*Kels(iQ,iN,l);
-	}
+    // Multiply by DIM x DIM JkInv - Can we make more cache-friendly?
+    for (int iN = 0; iN < dofs; ++iN) {
+      for (int iQ = 0; iQ < nQV; ++iQ) {
+	gradPhi(iQ,iN,0) = Kels(iQ,iN,0)*JkInv(0,0,iQ,iK)
+	  + Kels(iQ,iN,1)*JkInv(1,0,iQ,iK);
+	gradPhi(iQ,iN,1) = Kels(iQ,iN,0)*JkInv(0,1,iQ,iK)
+	  + Kels(iQ,iN,1)*JkInv(1,1,iQ,iK);
       }
     }
     
-    // Multiply by DIM x DIM JkInv - Can we make more cache friendly?
-    for (int iN = 0; iN < dofs; ++iN) {
-      for (int iQ = 0; iQ < nQV; ++iQ) {
-	gradPhi(iQ,iN,0) = localJKel(iQ,iN,0)*JkInv(0,0,iQ,iK)
-	  + localJKel(iQ,iN,1)*JkInv(1,0,iQ,iK);
-	gradPhi(iQ,iN,1) = localJKel(iQ,iN,0)*JkInv(0,1,iQ,iK)
-	  + localJKel(iQ,iN,1)*JkInv(1,1,iQ,iK);
+    // localJKel = Jk*W*gradPhi
+    for (int l = 0; l < Mesh::DIM; ++l) {
+      for (int iN = 0; iN < dofs; ++iN) {
+	for (int iQ = 0; iQ < nQV; ++iQ) {
+	  localJKel(iQ,iN,l) = Jk(iQ,iK)*wQV(iQ)*gradPhi(iQ,iN,l);
+	}
       }
     }
     
     // residual += gradPhi_l*fc_l(uInterpV)
     for (int l = 0; l < Mesh::DIM; ++l) {
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-		  dofs, nStates, nQV, 1.0, &gradPhi(0,0,l), nQV,
+		  dofs, nStates, nQV, 1.0, &localJKel(0,0,l), nQV,
 		  &fc(0,0,l), nQV, 1.0, &residual(0,0,iK), dofs);
     }
   }

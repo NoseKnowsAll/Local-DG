@@ -79,6 +79,25 @@ public:
   /** Initialize mappings assuming evenly distributed square */
   void defaultSquare(int nx, int ny);
   
+private:
+  
+  /** Label faces of rectange according to vertices */
+  void initFToV();
+  
+  /** Initialize bilinear mappings from element coordinates */
+  void initBilinearMappings();
+
+  /** Initialize normals from element coordinates */
+  void initNormals();
+  
+  /** Resolve periodicities in eToV */
+  void resolvePeriodicities(const iarray& periodicity);
+  
+  /** Initialize connectivity in eToE and eToF */
+  void initConnectivity();
+  
+public:
+  
   /** Initialize global nodes from bilinear mapping of reference nodes */
   void setupNodes(const darray& InterpTk, int _order);
   
@@ -93,6 +112,10 @@ public:
   void setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
 		      int nQF, const darray& xQF, darray& JkF) const;
   
+  /** Writes mesh to example Gmsh 3.0 .msh file */
+  void outputMesh(const std::string& filename, int nx, int ny) const;
+  
+  /** Allows C++ command-line stream output */
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
   
   /** MPI Utility class */
