@@ -455,6 +455,62 @@ void dlegendre2D(int p, const darray& x2D, darray& dl2D) {
 }
 
 /**
+   Evaluates the 2D gradient of Legendre polynomials of order 0:p in each
+   dimension on the reference element [-1,1]^2 at the 
+   unstructured points specified in x2D.
+*/
+void dlegendre2DUnstructured(int p, const darray& x2D, darray& dl2D) {
+  
+  int npts = 1;
+  for (int s = 1; s < x2D.ndim(); ++s) {
+    npts *= x2D.size(s);
+  }
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    dl2D.realloc(npts, 1, 1, 2);
+    return;
+  }
+  
+  // Initialize 1D arrays from 2D input
+  darray x{1,npts};
+  darray y{1,npts};
+  for (int i = 0; i < npts; ++i) {
+    x(0,i) = x2D(0,i);
+    y(0,i) = x2D(1,i);
+  }
+  
+  // Compute 1D Legendre polynomials
+  darray lx, ly;
+  legendre(p, x, lx);
+  legendre(p, y, ly);
+  // Compute 1D derivatives of Legendre polynomials
+  darray dlx, dly;
+  dlegendre(p, x, lx, dlx);
+  dlegendre(p, y, ly, dly);
+  
+  // Combine 1D Legendre polynomials into 2D polynomial
+  dl2D.realloc(npts, p+1, p+1, 2);
+  
+  // x
+  for (int ipy = 0; ipy <= p; ++ipy) {
+    for (int ipx = 0; ipx <= p; ++ipx) {
+      for (int i = 0; i < npts; ++i) {
+	  dl2D(i,ipx,ipy,0) = dlx(i,ipx)*ly(i,ipy);
+      }
+    }
+  }
+  // y
+  for (int ipy = 0; ipy <= p; ++ipy) {
+    for (int ipx = 0; ipx <= p; ++ipx) {
+      for (int i = 0; i < npts; ++i) {
+	  dl2D(i,ipx,ipy,1) = lx(i,ipx)*dly(i,ipy);
+      }
+    }
+  }
+  
+}
+
+/**
    Evaluates the 3D Legendre polynomials of order 0:p in each dimension on the 
    reference element [-1,1]^3 at the points specified in x3D
 */
@@ -601,6 +657,80 @@ void dlegendre3D(int p, const darray& x3D, darray& dl3D) {
 }
 
 /**
+   Evaluates the 3D gradient of Legendre polynomials of order 0:p in each
+   dimension on the reference element [-1,1]^3 at the 
+   unstructured points specified in x3D.
+*/
+void dlegendre3DUnstructured(int p, const darray& x3D, darray& dl3D) {
+  
+  int npts = 1;
+  for (int s = 1; s < x3D.ndim(); ++s) {
+    npts *= x3D.size(s);
+  }
+  if (p < 0) {
+    std::cerr << "ERROR: legendre polynomial order must be nonnegative!" << std::endl;
+    dl3D.realloc(npts,1,1,1,3);
+    return;
+  }
+  
+  // Initialize 1D arrays from 3D input
+  darray x{1,npts};
+  darray y{1,npts};
+  darray z{1,npts};
+  for (int i = 0; i < npts; ++i) {
+    x(0,i) = x3D(0,i);
+    y(0,i) = x3D(1,i);
+    z(0,i) = x3D(2,i);
+  }
+  
+  // Compute 1D Legendre polynomials
+  darray lx,ly,lz;
+  legendre(p, x, lx);
+  legendre(p, y, ly);
+  legendre(p, z, lz);
+  // Compute 1D derivatives of Legendre polynomials
+  darray dlx,dly,dlz;
+  dlegendre(p, x, lx, dlx);
+  dlegendre(p, y, ly, dly);
+  dlegendre(p, z, lz, dlz);
+  
+  // Combine 1D Legendre polynomials into 3D polynomial
+  dl3D.realloc(npts, p+1, p+1, p+1, 3);
+  
+  // x
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int i = 0; i < npts; ++i) {
+	  dl3D(i,ipx,ipy,ipz,0) = dlx(i,ipx)*ly(i,ipy)*lz(i,ipz);
+	}
+      }
+    }
+  }
+  // y
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int i = 0; i < npts; ++i) {
+	  dl3D(i,ipx,ipy,ipz,1) = lx(i,ipx)*dly(i,ipy)*lz(i,ipz);
+	}
+      }
+    }
+  }
+  // z
+  for (int ipz = 0; ipz <= p; ++ipz) {
+    for (int ipy = 0; ipy <= p; ++ipy) {
+      for (int ipx = 0; ipx <= p; ++ipx) {
+	for (int i = 0; i < npts; ++i) {
+	  dl3D(i,ipx,ipy,ipz,2) = lx(i,ipx)*ly(i,ipy)*dlz(i,ipz);
+	}
+      }
+    }
+  }
+  
+}
+
+/**
    Computes an interpolation matrix from a set of 1D points to another set of 1D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define an interval.
@@ -718,7 +848,8 @@ void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTER
    Computes the derivative of the basis functions defined by 1D points on another set of 1D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define an interval.
-   Points interpolating onto can be of any size, but must be defined on that same interval.
+   Points interpolating onto can be unstructured of any size,
+   but must be defined on that same interval.
 */
 void dPhi1D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
   
@@ -758,7 +889,8 @@ void dPhi1D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
    Computes the gradient of the basis functions defined by 2D points on another set of 2D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define a square.
-   Points interpolating onto can be of any size, but must be defined on that same square.
+   Points interpolating onto can be unstructured of any size,
+   but must be defined on that same square.
 */
 void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
   
@@ -781,9 +913,12 @@ void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
 		lFrom.data(), nFrom, ipiv, coeffsPhi.data(), nFrom);
   
   // Compute gradient of reference bases on the output points
-  int nTo = xTo.size(1)*xTo.size(2);
+  int nTo = 1;
+  for (int s = 1; s < xTo.ndim(); ++s) {
+    nTo *= xTo.size(s);
+  }
   darray dlTo;
-  dlegendre2D(order, xTo, dlTo);
+  dlegendre2DUnstructured(order, xTo, dlTo);
   
   // Construct gradient of phi = dlTo*coeffsPhi
   dPhiTo.realloc(nTo, nFrom, dim);
@@ -799,7 +934,8 @@ void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
    Computes the gradient of the basis functions defined by 3D points on another set of 3D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define a cube.
-   Points interpolating onto can be of any size, but must be defined on that same cube.
+   Points interpolating onto can be unstructured of any size,
+   but must be defined on that same cube.
 */
 void dPhi3D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
   
@@ -826,7 +962,7 @@ void dPhi3D(const darray& xFrom, const darray& xTo, darray& dPhiTo) {
   // Compute gradient of reference bases on the output points
   int nTo = xTo.size(1)*xTo.size(2)*xTo.size(3);
   darray dlTo;
-  dlegendre3D(order, xTo, dlTo);
+  dlegendre3DUnstructured(order, xTo, dlTo);
   
   // Construct gradient of phi = dlTo*coeffsPhi
   dPhiTo.realloc(nTo, nFrom, dim);

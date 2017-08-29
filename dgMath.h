@@ -81,6 +81,13 @@ void legendre2D(int p, const darray& x2D, darray& l2D);
 void dlegendre2D(int p, const darray& x2D, darray& dl2D);
 
 /**
+   Evaluates the 2D gradient of Legendre polynomials of order 0:p in each
+   dimension on the reference element [-1,1]^2 at the 
+   unstructured points specified in x2D.
+*/
+void dlegendre2DUnstructured(int p, const darray& x2D, darray& dl2D);
+
+/**
    Evaluates the 3D Legendre polynomials of order 0:p in each dimension on the 
    reference element [-1,1]^3 at the points specified in x3D
 */
@@ -91,6 +98,13 @@ void legendre3D(int p, const darray& x3D, darray& l3D);
    dimension on the reference element [-1,1]^3 at the points specified in x3D
 */
 void dlegendre3D(int p, const darray& x3D, darray& dl3D);
+
+/**
+   Evaluates the 3D gradient of Legendre polynomials of order 0:p in each
+   dimension on the reference element [-1,1]^3 at the 
+   unstructured points specified in x3D.
+*/
+void dlegendre3DUnstructured(int p, const darray& x3D, darray& dl3D);
 
 /**
    Computes an interpolation matrix from a set of 1D points to another set of 1D points.
@@ -120,7 +134,8 @@ void interpolationMatrix3D(const darray& xFrom, const darray& xTo, darray& INTER
    Computes the derivative of the basis functions defined by 1D points on another set of 1D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define an interval.
-   Points interpolating onto can be of any size, but must be defined on that same interval.
+   Points interpolating onto can be unstructured of any size,
+   but must be defined on that same interval.
 */
 void dPhi1D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
 
@@ -128,7 +143,8 @@ void dPhi1D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
    Computes the gradient of the basis functions defined by 2D points on another set of 2D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define a square.
-   Points interpolating onto can be of any size, but must be defined on that same square.
+   Points interpolating onto can be unstructured of any size,
+   but must be defined on that same square.
 */
 void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
 
@@ -136,7 +152,8 @@ void dPhi2D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
    Computes the gradient of the basis functions defined by 3D points on another set of 3D points.
    Assumes that points interpolating from provide enough accuracy (aka - 
    they are well spaced out and of high enough order), and define a cube.
-   Points interpolating onto can be of any size, but must be defined on that same cube.
+   Points interpolating onto can be unstructured of any size,
+   but must be defined on that same cube.
 */
 void dPhi3D(const darray& xFrom, const darray& xTo, darray& dPhiTo);
 

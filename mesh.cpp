@@ -816,31 +816,31 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
 		    nQF*N_FACES, 1, N_VERTICES, 1.0, 
 		    &dPhiTkQF(0,0,lj), nQF*N_FACES, 
 		    &bilinearMapping(0,li,iK), Mesh::N_VERTICES, 
-		    0.0, &JacobianKF(0,0,li,lj), nQF*N_VERTICES);
+		    0.0, &JacobianKF(0,0,li,lj), nQF*N_FACES);
       }
     }
     
     // TODO: think about this carefully, should JkF = ||normal||?
     // 1D integral => Only have a |gamma'(t)| term along correct xi_{l_i}
     // Compute JkF = |gamma'(t)| along at each face quadrature point
-    int li;
+    int lj;
     for (int iF = 0; iF < N_FACES; ++iF) {
       
       if (fToV(0,iF) == 3 && fToV(1,iF) == 0) {
 	// along xi_0 = -1
-	li = 1;
+	lj = 1;
       }
       else if (fToV(0,iF) == 0 && fToV(1,iF) == 1) {
 	// along xi_1 = -1
-	li = 0;
+	lj = 0;
       }
       else if (fToV(0,iF) == 1 && fToV(1,iF) == 2) {
 	// along xi_0 = 1
-	li = 1;
+	lj = 1;
       }
       else if (fToV(0,iF) == 2 && fToV(1,iF) == 3) {
 	// along xi_1 = 1
-	li = 0;
+	lj = 0;
       }
       else {
 	std::cerr << "ERROR: Vertices for fToV are not CCW!" << std::endl;
@@ -848,8 +848,8 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
       }
       
       for (int iQ = 0; iQ < nQF; ++iQ) {
-	JkF(iQ,iF,iK) = std::sqrt(JacobianKF(iQ,iF,li,0)*JacobianKF(iQ,iF,li,0) 
-				+ JacobianKF(iQ,iF,li,1)*JacobianKF(iQ,iF,li,1));
+	JkF(iQ,iF,iK) = std::sqrt(JacobianKF(iQ,iF,0,lj)*JacobianKF(iQ,iF,0,lj) 
+				+ JacobianKF(iQ,iF,1,lj)*JacobianKF(iQ,iF,1,lj));
       }
     }
     
