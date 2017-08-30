@@ -773,7 +773,7 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
   darray JacobianKF{nQF,N_FACES, DIM, DIM};
   Jk.realloc(nQV,nElements);
   JkF.realloc(nQF,N_FACES,nElements);
-  JkInv.realloc(DIM,DIM, nQV,nElements);
+  JkInv.realloc(DIM,DIM,nQV,nElements);
   
   for (int iK = 0; iK < nElements; ++iK) {
     

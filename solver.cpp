@@ -631,7 +631,7 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
       // KelsFJ = KelsF*JkF
       for (int iFN = 0; iFN < dofsF; ++iFN) {
 	for (int iFQ = 0; iFQ < nQF; ++iFQ) {
-	  KelsFJ(iFQ,iFN) = KelsF(iFQ,iFN)*JkF(iFQ,iF);
+	  KelsFJ(iFQ,iFN) = KelsF(iFQ,iFN)*JkF(iFQ,iF,iK);
 	}
       }
       

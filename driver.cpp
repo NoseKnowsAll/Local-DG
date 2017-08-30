@@ -22,8 +22,8 @@ int main(int argc, char *argv[]) {
   }
 #define USING_MESH 1
 #ifdef USING_MESH
-  //std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/unitSquare.msh"};
-  std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/mySquareX.msh"};
+  std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/unitSquare.msh"};
+  //std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/mySquareY.msh"};
   Mesh mesh{mshFile, mpi};
 #else
   /*
