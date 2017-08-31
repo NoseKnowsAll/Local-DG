@@ -76,7 +76,9 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   normals{},
   bilinearMapping{},
   efToN{},
-  efToQ{}
+  nfnToFN{},
+  efToQ{},
+  nfqToFQ{}
 {
   defaultSquare(nx, ny);
 }
@@ -107,7 +109,9 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   normals{},
   bilinearMapping{},
   efToN{},
-  efToQ{}
+  nfnToFN{},
+  efToQ{},
+  nfqToFQ{}
 {
   
   // Read mesh from file
@@ -117,6 +121,19 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
   if (!success) {
     mpi.exit(-1);
   }
+  
+  /* TODO: debugging
+  srand(time(NULL));
+  
+  for (int i = 0; i < nVertices; ++i) {
+    if (i <= 11 || i%11 == 0 || i%11 == 10 || i>100) {
+      continue;
+    }
+    for (int l = 0; l < DIM; ++l) {
+      vertices(l,i) += ((.04*(float)rand()/(float)RAND_MAX)-.02);
+    }
+  }
+  */
   
   initFToV();
   initBilinearMappings();
@@ -403,7 +420,9 @@ Mesh::Mesh(const Mesh& other) :
   normals{other.normals},
   bilinearMapping{other.bilinearMapping},
   efToN{other.efToN},
-  efToQ{other.efToQ}
+  nfnToFN{other.nfnToFN},
+  efToQ{other.efToQ},
+  nfqToFQ{other.nfqToFQ}
 { }
 
 /** Label faces of rectangle according to vertices */
@@ -536,7 +555,7 @@ void Mesh::initConnectivity() {
       
       bool boundary = true;
       
-      // Compare with all of the element/faces
+      // Compare with all possible neighbor elements/faces
       for (int nK = 0; nK < nElements; ++nK) {
 	for (int nF = 0; nF < N_FACES; ++nF) {
 	  if (facesSeen(nF,nK))
@@ -611,7 +630,7 @@ void Mesh::setupNodes(const darray& InterpTk, int _order) {
   }
   
   // Nodes per face
-  int nFNodes = initFaceMap(efToN, order+1); 
+  int nFNodes = initFaceMap(efToN, nfnToFN, order+1); 
   
 }
 
@@ -634,7 +653,7 @@ void Mesh::setupQuads(const darray& InterpTkQ, int nQV) {
   
   // Quadrature points per face
   int nQ = (int)std::ceil(order+1/2.0);
-  int nFQNodes = initFaceMap(efToQ, nQ);
+  int nFQNodes = initFaceMap(efToQ, nfqToFQ, nQ);
   mpi.initDatatype(nFQNodes);
   
 }
@@ -645,11 +664,12 @@ void Mesh::setupQuads(const darray& InterpTkQ, int nQV) {
    
    For every element k, face i, face node iFN:
    My node @: soln(efMap(iFN, i), :, k)
-   Neighbor's node @: soln(efMap(iFN, eToF(i,k)), :, eToE(i,k))
+   Neighbor's node @: soln(efMap(nfMap(iFN), eToF(i,k)), :, eToE(i,k))
 */
-int Mesh::initFaceMap(iarray& efMap, int size1D) {
+int Mesh::initFaceMap(iarray& efMap, iarray& nfMap, int size1D) {
   
   efMap.realloc(size1D, N_FACES);
+  nfMap.realloc(size1D);
   
   int xOff;
   int yOff;
@@ -659,12 +679,13 @@ int Mesh::initFaceMap(iarray& efMap, int size1D) {
   // 3---2
   // |   |
   // 0---1
+  // Care is given to ensure nodes on each face are CCW
   for (int iF = 0; iF < N_FACES; ++iF) {
     if (fToV(0,iF) == 3 && fToV(1,iF) == 0) {
       // -x direction face
       xOff = 0;
       for (int iy = 0; iy < size1D; ++iy) {
-	yOff = iy*size1D;
+	yOff = (size1D-iy-1)*size1D;
 	efMap(iy, iF) = xOff+yOff;
       }
     }
@@ -688,7 +709,7 @@ int Mesh::initFaceMap(iarray& efMap, int size1D) {
       // +y direction face
       yOff = (size1D-1)*size1D;
       for (int ix = 0; ix < size1D; ++ix) {
-	xOff = ix;
+	xOff = (size1D-ix-1);
 	efMap(ix, iF) = xOff+yOff;
       }
     }
@@ -696,6 +717,11 @@ int Mesh::initFaceMap(iarray& efMap, int size1D) {
       std::cerr << "ERROR: Vertices for fToV are not CCW!" << std::endl;
       mpi.exit(-1);
     }
+  }
+  
+  // nfMap is CW-oriented version of efMap
+  for (int i = 0; i < size1D; ++i) {
+    nfMap(i) = size1D-i-1;
   }
   
   // Re-organize face nodes so they are accessible by one index
@@ -820,7 +846,7 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
       }
     }
     
-    // TODO: think about this carefully, should JkF = ||normal||?
+    // TODO: think about this carefully, should JkF = ||tangent||/2?
     // 1D integral => Only have a |gamma'(t)| term along correct xi_{l_i}
     // Compute JkF = |gamma'(t)| along at each face quadrature point
     int lj;

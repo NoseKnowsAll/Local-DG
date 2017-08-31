@@ -13,6 +13,8 @@
 #include <iostream>
 #include <set>
 #include <limits>
+#include <stdlib.h>
+#include <time.h>
 
 #include "io.h"
 #include "MPIUtil.h"
@@ -149,13 +151,13 @@ public:
   /**
      True coordinates of chebyshev nodes for each element:
      For every element k, node i,
-     globalCoords(:, i,k) = 3D location of node i
+     globalCoords(:,i,k) = 3D location of node i
   */
   darray globalCoords;
   /**
      True coordinates of quadrature points for each element:
      For every element k, quadrature point i,
-     globalQuads(:, i,k) = 3D location of quadrature point i
+     globalQuads(:,i,k) = 3D location of quadrature point i
   */
   darray globalQuads;
   ///////////////////////////////////////
@@ -236,6 +238,13 @@ public:
      efToN(:, i) = local node IDs of nodes on face i
   */
   iarray efToN;
+  /**
+     neighbor-face-node-to-face-node map:
+     For every face node ID iFN (same across all faces/elements)
+     nfnToFN(iFN) = face node ID on neighbor's face
+     Neighbor node: soln(nfnToFN(iFN), eToF(iF,iK), :, eToE(iF,iK))
+  */
+  iarray nfnToFN;
   
   /**
      element-face-to-quadrature-point map:
@@ -243,6 +252,13 @@ public:
      efToQ(:, i) = local quad IDs of quadrature points on face i
   */
   iarray efToQ;
+  /**
+     neighbor-face-quadrature-point-to-quadrature-point map:
+     For every face quadrature point ID iFQ (same across all faces/elements)
+     nfqToFQ(iFQ) = face quadrature point ID on neighbor's face
+     Neighbor quad: soln(nfqToFQ(iFQ), eToF(iF,iK), :, eToE(iF,iK))
+  */
+  iarray nfqToFQ;
 
 private:
 
@@ -252,9 +268,9 @@ private:
      
      For every element k, face i, face node iFN:
      My node @: soln(efMap(iFN, i), :, k)
-     Neighbor's node @: soln(efMap(iFN, eToF(i,k)), :, eToE(i,k))
+     Neighbor's node @: soln(efMap(nfMap(iFN), eToF(i,k)), :, eToE(i,k))
   */
-  int initFaceMap(iarray& efMap, int size1D);
+  int initFaceMap(iarray& efMap, iarray& nfMap, int size1D);
   
 };
 

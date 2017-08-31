@@ -605,16 +605,16 @@ void Solver::convectDGFlux(const darray& uInterpF, darray& residual) const {
 	  
 	  // Get all state variables at this point
 	  for (int iS = 0; iS < nStates; ++iS) {
-	    uK(iS) = uInterpF(iFQ, iS, iF, iK);
-	    uN(iS) = uInterpF(iFQ, iS, nF, nK);
+	    uK(iS) = uInterpF(iFQ,               iS, iF, iK);
+	    uN(iS) = uInterpF(mesh.nfqToFQ(iFQ), iS, nF, nK);
 	  }
 	  // Get material properties at this point
-	  double lambdaK = p.lambda(mesh.efToQ(iFQ, iF), iK);
-	  double lambdaN = p.lambda(mesh.efToQ(iFQ, nF), nK);
-	  double muK = p.mu(mesh.efToQ(iFQ, iF), iK);
-	  double muN = p.mu(mesh.efToQ(iFQ, nF), nK);
-	  double rhoK = p.rho(mesh.efToQ(iFQ, iF), iK);
-	  double rhoN = p.rho(mesh.efToQ(iFQ, nF), nK);
+	  double lambdaK = p.lambda(mesh.efToQ(iFQ,               iF), iK);
+	  double lambdaN = p.lambda(mesh.efToQ(mesh.nfqToFQ(iFQ), nF), nK);
+	  double muK     = p.mu    (mesh.efToQ(iFQ,               iF), iK);
+	  double muN     = p.mu    (mesh.efToQ(mesh.nfqToFQ(iFQ), nF), nK);
+	  double rhoK    = p.rho   (mesh.efToQ(iFQ,               iF), iK);
+	  double rhoN    = p.rho   (mesh.efToQ(mesh.nfqToFQ(iFQ), nF), nK);
 	  
 	  // Compute fluxes = F*(u+,u-)'*n
 	  numericalFluxC(uN, uK, normalK, fluxes,
@@ -854,9 +854,9 @@ void Solver::mpiSendMaterials() {
 	auto nF = mesh.eToF(mpi.faceMap(iF), iK);
 	
 	for (int iFQ = 0; iFQ < nQF; ++iFQ) {
-	  p.lambda(mesh.efToQ(iFQ,nF),nK) = toRecv(0, iFQ, bK, iF);
-	  p.mu(mesh.efToQ(iFQ,nF),nK)     = toRecv(1, iFQ, bK, iF);
-	  p.rho(mesh.efToQ(iFQ,nF),nK)    = toRecv(2, iFQ, bK, iF);
+	  p.lambda(mesh.efToQ(mesh.nfqToFQ(iFQ),nF),nK) = toRecv(0, iFQ, bK, iF);
+	  p.mu    (mesh.efToQ(mesh.nfqToFQ(iFQ),nF),nK) = toRecv(1, iFQ, bK, iF);
+	  p.rho   (mesh.efToQ(mesh.nfqToFQ(iFQ),nF),nK) = toRecv(2, iFQ, bK, iF);
 	}
       }
     }

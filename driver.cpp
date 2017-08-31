@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
 #define USING_MESH 1
 #ifdef USING_MESH
   std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/unitSquare.msh"};
-  //std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/mySquareY.msh"};
+  //std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/mySquareX.msh"};
   Mesh mesh{mshFile, mpi};
 #else
   /*
@@ -41,6 +41,10 @@ int main(int argc, char *argv[]) {
   mesh.outputMesh(outputFile, nx, nx);
 #endif
   
+  if (mpi.rank == mpi.ROOT) {
+    std::cout << "dx: min = " << mesh.dxMin << ", max = " << mesh.dxMax << std::endl;
+  }
+  
   // Initialize sources
   int nsrcs = 1;
   Source::Params srcParams;
@@ -57,11 +61,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing solver..." << std::endl;
   }
   int order = 4;
-  // TODO: debugging
   double tf = 0.1;
   double dtSnap = 0.005;
-  //double tf = 0.002;
-  //double dtSnap = 0.00025;
   
   if (mpi.rank == mpi.ROOT) {
     std::cout << "order = " << order << std::endl;
