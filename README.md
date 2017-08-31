@@ -1,5 +1,5 @@
-# Local-DG
-Local Discontinuous Galerkin Solver written in C++ and MPI for use on supercomputers such as NERSC's Edison or TACC's Stampede to solve problems involving the Navier-Stokes equations in 3D.
+# DG
+Discontinuous Galerkin Solver written in C++ and MPI for use on supercomputers such as NERSC's Edison or TACC's Stampede to solve the elastic wave equation problem in 2D.
 
 Can be compiled using the MPI Intel compiler (`mpiicpc`) or MPI GCC compiler (`mpic++`).
 
@@ -7,7 +7,7 @@ To install, run `git clone https://github.com/NoseKnowsAll/Local-DG.git`
 
 ## Running the Program
 
-Main options that can be changed are available in `driver.cpp` and in the constructor `Solver::Solver()` within `solver.cpp`.
+Main options that can be changed are available in the main function of `driver.cpp`.
 
 First compile the program:
 
