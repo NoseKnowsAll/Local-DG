@@ -240,7 +240,7 @@ void Solver::initTimeStepping(double dtSnap) {
   }
   
   // Choose dt based on CFL condition
-  double CFL = 0.1;
+  double CFL = 0.4;
   dt = CFL*mesh.dxMin/(p.C*(std::max(1, order*order)));
   // Ensure we will exactly end at tf
   timesteps = static_cast<dgSize>(std::ceil(tf/dt));
