@@ -70,9 +70,15 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
   }
   
   // Skip more header information
+  bool periodic = false;
   while(std::getline(mshFile, nextLine)) {
-    if (nextLine == "$Periodic")
+    if (nextLine == "$Periodic") {
+      periodic = true;
       break;
+    }
+  }
+  if (!periodic) {
+    return true;
   }
   
   // Read in periodic information

@@ -1,5 +1,7 @@
 How to visualize data in Paraview:
 
+PDF discussing this is also available under /reports/
+
 
 You must have Paraview 4.4.0 installed on your actual computer. For step-by-step instructions, go to 
 http://www.nersc.gov/users/data-analytics/data-visualization/paraview-2/

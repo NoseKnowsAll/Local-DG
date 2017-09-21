@@ -515,6 +515,9 @@ void Mesh::initNormals() {
 
 /** Resolve periodicities in eToV */
 void Mesh::resolvePeriodicities(const iarray& periodicity) {
+  if (periodicity.size() == 0) {
+    return;
+  }
   
   bool resolved = false;
   while (!resolved) {
