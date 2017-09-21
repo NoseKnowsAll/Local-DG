@@ -48,6 +48,8 @@ Solver::Solver(int _order, Source::Params srcParams, double dtSnap, double _tf, 
   
   // Compute interpolation matrices
   precomputeInterpMatrices(); // sets nQ*,xQ*,wQ*,Interp*
+  
+  // Send solver information to mesh
   mesh.setupNodes(InterpTk, order);
   mesh.setupQuads(InterpTkQ, nQV);
   mesh.setupJacobians(nQV, xQV, Jk, JkInv, nQF, xQF, JkF);
@@ -123,11 +125,11 @@ void Solver::precomputeLocalMatrices() {
   
   // Set state-to-storage mapping
   sToS.realloc(nStates);
-  for (int s = 0; s < Mesh::DIM*(Mesh::DIM+1)/2; ++s) {
-    sToS(s) = 0; // upper diagonal of strain tensor
+  for (int iS = 0; iS < Mesh::DIM*(Mesh::DIM+1)/2; ++iS) {
+    sToS(iS) = 0; // upper diagonal of strain tensor
   }
-  for (int s = Mesh::DIM*(Mesh::DIM+1)/2; s < nStates; ++s) {
-    sToS(s) = 1; // velocities
+  for (int iS = Mesh::DIM*(Mesh::DIM+1)/2; iS < nStates; ++iS) {
+    sToS(iS) = 1; // velocities
   }
   
   // Compute mass matrix = Interp'*W*Jk*Ps*Interp
@@ -240,7 +242,7 @@ void Solver::initTimeStepping(double dtSnap) {
   }
   
   // Choose dt based on CFL condition
-  double CFL = 0.4;
+  double CFL = (order > 5 ? 0.1 : 0.4);
   dt = CFL*mesh.dxMin/(p.C*(std::max(1, order*order)));
   // Ensure we will exactly end at tf
   timesteps = static_cast<dgSize>(std::ceil(tf/dt));
@@ -273,9 +275,6 @@ void Solver::initSource(Source::Params& srcParams) {
 
 /** Sets u according to an initial condition */
 void Solver::initialCondition() {
-  
-  trueSolution(u, -p.src.halfSrc*dt);
-  return;
   
   for (int iK = 0; iK < mesh.nElements; ++iK) {
     for (int iN = 0; iN < dofs; ++iN) {
@@ -381,11 +380,17 @@ void Solver::dgTimeStep() {
       if (!success)
 	mpi.exit(-1);
       
-      // Compute error
-      trueSolution(uTrue, iTime*dt);
-      double error = computeL2Error(u, uTrue);
-      std::cout << "L2 error = " << error << std::endl;
+      computePressure(uInterpV, pressure);
+      success = initXYZVFile("output/xyp.txt", Mesh::DIM, iTime/stepsPerSnap, "p", nStates);
+      if (!success)
+	mpi.exit(-1);
+      success = exportToXYZVFile("output/xyp.txt", iTime/stepsPerSnap, mesh.globalQuads, pressure);
+      if (!success)
+	mpi.exit(-1);
+
       
+      
+#ifdef DEBUG
       // Sanity check
       double norm = computeL2Norm(u);
       std::cout << "L2 norm = " << norm << std::endl;
@@ -393,6 +398,7 @@ void Solver::dgTimeStep() {
 	std::cerr << "ERROR: NaNs detected by norm calculation!" << std::endl;
 	mpi.exit(-1);
       }
+#endif
       
     }
     

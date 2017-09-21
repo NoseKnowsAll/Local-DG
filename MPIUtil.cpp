@@ -8,7 +8,7 @@ MPIUtil::MPIUtil() {
   
   nps.realloc(DIM);
   for (int l = 0; l < DIM; ++l) {
-    nps[l] = 0; // TODO: Must be 0 before sending to MPI_Dims_create
+    nps[l] = 0; // Must be 0 before sending to MPI_Dims_create
   }
   MPI_Dims_create(np, DIM, nps.data());
   

@@ -270,6 +270,7 @@ void Source::definePositions(const Params& in, const Mesh& mesh) {
   
   int nsrcs = in.srcPos.size(1);
   int nQV = mesh.globalQuads.size(1);
+  const double epsilon = 1e-16;
   
   weights.realloc(nQV, mesh.nElements);
   
@@ -285,7 +286,7 @@ void Source::definePositions(const Params& in, const Mesh& mesh) {
 	
 	// Create Gaussian around each source evaluated at each quadrature point
 	double value = in.srcAmps(i)*std::exp(-DWEIGHT*dist);
-	weights(iQ, iK) += (value > 1e-16 ? value : 0.0);
+	weights(iQ, iK) += (value > epsilon ? value : 0.0);
 	
       }
     }

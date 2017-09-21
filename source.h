@@ -13,7 +13,7 @@ public:
 
   /** Allowable types of wavelets*/
   enum class Wavelet {
-    cos, ricker, rtm, gaussian, spike, null
+    cos, ricker, rtm, spike, null
   };
   
   // Input parameters for specifying source

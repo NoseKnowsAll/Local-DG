@@ -109,7 +109,7 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
     case 2: {
       // combining vertices on faces
       std::cout << "ERROR: I have not programmed periodic faces!" << std::endl;
-      for (int j = 0; j < nNodes; ++j) { // TODO: is this correct?
+      for (int j = 0; j < nNodes; ++j) { // TODO: Not yet tried in 3D - is this correct?
 	mshFile >> slave >> master;
 	periodicity(slave-1) = master-1;
       }

@@ -65,9 +65,9 @@ private:
   
   // For Elastic
   typedef struct {
-    // Use reasonable constants when no input file
-    const double vpConst = std::sqrt((2.2+2*1.3)/1.2);//200.0;
-    const double vsConst = std::sqrt(1.3/1.2);//80.0;
+    // TODO: Use reasonable constants when no input DDS files
+    const double vpConst = 200.0;
+    const double vsConst = 80.0;
     const double rhoConst = 1.2;
     double C;      // max velocity throughout domain
     darray lambda; // Lame's first parameter

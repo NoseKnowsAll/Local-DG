@@ -122,19 +122,6 @@ Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
     mpi.exit(-1);
   }
   
-  /* TODO: debugging
-  srand(time(NULL));
-  
-  for (int i = 0; i < nVertices; ++i) {
-    if (i <= 11 || i%11 == 0 || i%11 == 10 || i>100) {
-      continue;
-    }
-    for (int l = 0; l < DIM; ++l) {
-      vertices(l,i) += ((.04*(float)rand()/(float)RAND_MAX)-.02);
-    }
-  }
-  */
-  
   initFToV();
   initBilinearMappings();
   initNormals();
@@ -587,8 +574,6 @@ void Mesh::initConnectivity() {
       
       if (boundary) {
 	
-	std::cout << "found a boundary at " << iK << ", face " << iF << std::endl;
-	
 	double y1 = vertices(1, eToV(fToV(0,iF), iK));
 	double y2 = vertices(1, eToV(fToV(1,iF), iK));
 	if (y1 == 0.0 && y2 == 0.0) {
@@ -846,9 +831,10 @@ void Mesh::setupJacobians(int nQV, const darray& xQV, darray& Jk, darray& JkInv,
       }
     }
     
-    // TODO: think about this carefully, should JkF = ||tangent||/2?
     // 1D integral => Only have a |gamma'(t)| term along correct xi_{l_i}
     // Compute JkF = |gamma'(t)| along at each face quadrature point
+    // Think about this carefully: I think math => JkF = ||tangent||/2?
+    
     int lj;
     for (int iF = 0; iF < N_FACES; ++iF) {
       
