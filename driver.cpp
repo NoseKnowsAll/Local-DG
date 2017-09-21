@@ -22,8 +22,12 @@ int main(int argc, char *argv[]) {
   }
   
   std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/square.msh"};
-  Mesh mesh{mshFile, mpi};
+  // TODO: readProps() not yet implemented!
+  std::string vpFile{""};
+  std::string vsFile{""};
+  std::string rhoFile{""};
   
+  Mesh mesh{mshFile, vpFile, vsFile, rhoFile, mpi};
   if (mpi.rank == mpi.ROOT) {
     std::cout << "dx: min = " << mesh.dxMin << ", max = " << mesh.dxMax << std::endl;
   }

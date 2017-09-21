@@ -76,7 +76,9 @@ public:
   Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi);
   Mesh(const Mesh& other);
   
-  Mesh(const std::string& filename, const MPIUtil& _mpi);
+  Mesh(const std::string& filename, const std::string& _vpFile, 
+       const std::string& _vsFile, const std::string& _rhoFile, 
+       const MPIUtil& _mpi);
   
   /** Initialize mappings assuming evenly distributed square */
   void defaultSquare(int nx, int ny);
@@ -119,6 +121,13 @@ public:
   
   /** Allows C++ command-line stream output */
   friend std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
+  
+  /** Filename corresponding to DDS input vp file associated with this mesh */
+  std::string vpFile;
+  /** Filename corresponding to DDS input vs file associated with this mesh */
+  std::string vsFile;
+  /** Filename corresponding to DDS input rho file associated with this mesh */
+  std::string rhoFile;
   
   /** MPI Utility class */
   MPIUtil mpi;

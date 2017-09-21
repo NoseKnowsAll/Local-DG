@@ -185,10 +185,11 @@ void Solver::precomputeLocalMatrices() {
 /** Initializes lambda, mu arrays according to file info */
 void Solver::initMaterialProps() {
   
-  darray vp, vs, rhoIn;
+  darray vp, vs, rho;
   darray deltas{Mesh::DIM};
   darray origins{Mesh::DIM};
-  bool fileExists = readProps(vp, vs, rhoIn, origins, deltas);
+  bool fileExists = readProps(mesh.vpFile, mesh.vsFile, mesh.rhoFile, 
+			      vp, vs, rho, origins, deltas);
   
   p.lambda.realloc(nQV, mesh.nElements+mesh.nGElements);
   p.mu.realloc(nQV, mesh.nElements+mesh.nGElements);
@@ -212,7 +213,7 @@ void Solver::initMaterialProps() {
 	
 	double vpi = gridInterp(coord, vp, origins, deltas);
 	double vsi = gridInterp(coord, vs, origins, deltas);
-	double rhoi = gridInterp(coord, rhoIn, origins, deltas);
+	double rhoi = gridInterp(coord, rho, origins, deltas);
 	
 	// Isotropic elastic media formula
 	p.lambda(iQ,iK) = rhoi*(vpi*vpi - 2*vsi*vsi);

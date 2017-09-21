@@ -128,12 +128,15 @@ bool readMesh(const std::string& filename, int dim, int n_vertices,
 }
 
 /**
-   Reads in the material properties from files
+   Reads in the material properties from input DDS files
    Also initializes origins and deltas for use throughout program
 */
-bool readProps(darray& vp, darray& vs, darray& rhoIn, darray& origins, darray& deltas) {
+bool readProps(const std::string& vpFile, const std::string& vsFile,
+	       const std::string& rhoFile, darray& vp, darray& vs, darray& rho,
+	       darray& origins, darray& deltas) {
   return false;
   // TODO: not currently developed!
+  // DDS filenames accessible by vpFile, vsFile, rhoFile
 }
 
 /**

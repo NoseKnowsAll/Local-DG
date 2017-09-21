@@ -51,6 +51,9 @@ Mesh::Mesh(const MPIUtil& _mpi) : Mesh{10, 10, Point{0.0, 0.0}, Point{1.0, 1.0},
 
 /** Main constructor */
 Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const MPIUtil& _mpi) :
+  vpFile{},
+  vsFile{},
+  rhoFile{},
   mpi{_mpi},
   nElements{},
   nIElements{},
@@ -83,7 +86,12 @@ Mesh::Mesh(int nx, int ny, const Point& _botLeft, const Point& _topRight, const 
   defaultSquare(nx, ny);
 }
 
-Mesh::Mesh(const std::string& filename, const MPIUtil& _mpi) :
+Mesh::Mesh(const std::string& filename, const std::string& _vpFile, 
+	   const std::string& _vsFile, const std::string& _rhoFile,
+	   const MPIUtil& _mpi) :
+  vpFile{_vpFile},
+  vsFile{_vsFile},
+  rhoFile{_rhoFile},
   mpi{_mpi},
   nElements{},
   nIElements{},
@@ -180,6 +188,8 @@ void Mesh::defaultSquare(int nx, int ny) {
     }
   }
   
+  const bool periodic = true;
+  
   // Distinguishing between boundary and interior elements
   nElements  = localNs[0]*localNs[1];
   nIElements = (localNs[0]-2)*(localNs[1]-2);
@@ -187,16 +197,18 @@ void Mesh::defaultSquare(int nx, int ny) {
   nGElements = 0;
   mpiNBElems.realloc(MPIUtil::N_FACES);
   for (int iF = 0; iF < MPIUtil::N_FACES; ++iF) {
-    //mpiNBElems(iF) = 0;
-    //* necessary for periodic BCs
-    mpiNBElems(iF) = 1;
-    for (int l = 0; l < MPIUtil::DIM; ++l) {
-      if (l != iF/2) {
-	mpiNBElems(iF) *= localNs[l];
+    if (periodic) {
+      mpiNBElems(iF) = 1;
+      for (int l = 0; l < MPIUtil::DIM; ++l) {
+	if (l != iF/2) {
+	  mpiNBElems(iF) *= localNs[l];
+	}
       }
+      nGElements += mpiNBElems(iF);
     }
-    nGElements += mpiNBElems(iF);
-    //*/
+    else {
+      mpiNBElems(iF) = 0;
+    }
   }
   
   nVertices  = (localNs[0]+1)*(localNs[1]+1);
@@ -300,48 +312,60 @@ void Mesh::defaultSquare(int nx, int ny) {
       
       // Neighbor elements in -x,+x,-y,+y directions stored in faces
       if (face0) {
-	// Apply absorbing boundary condition at -x boundary
-	//eToE(0, eIndex) = static_cast<int>(Boundary::absorbing);
-	
-	int ghostNum = iy;
-	eToE(0, eIndex) = faceOffsets(0)+ghostNum;
-	mpibeToE(ghostNum, 0) = eIndex;
+	if (!periodic) {
+	  // Apply absorbing boundary condition at -x boundary
+	  eToE(0, eIndex) = static_cast<int>(Boundary::absorbing);
+	}
+	else {
+	  int ghostNum = iy;
+	  eToE(0, eIndex) = faceOffsets(0)+ghostNum;
+	  mpibeToE(ghostNum, 0) = eIndex;
+	}
       }
       else {
 	eToE(0, eIndex) = ixM+iy0;
       }
       
       if (face1) {
-	// Apply absorbing boundary condition at +x boundary
-	//eToE(1, eIndex) = static_cast<int>(Boundary::absorbing);
-	
-	int ghostNum = iy;
-	eToE(1, eIndex) = faceOffsets(1)+ghostNum;
-	mpibeToE(ghostNum, 1) = eIndex;
+	if (!periodic) {
+	  // Apply absorbing boundary condition at +x boundary
+	  eToE(1, eIndex) = static_cast<int>(Boundary::absorbing);
+	}
+	else {
+	  int ghostNum = iy;
+	  eToE(1, eIndex) = faceOffsets(1)+ghostNum;
+	  mpibeToE(ghostNum, 1) = eIndex;
+	}
       }
       else {
 	eToE(1, eIndex) = ixP+iy0;
       }
       
       if (face2) {
-	// Apply absorbing boundary condition at -y boundary
-	//eToE(2, eIndex) = static_cast<int>(Boundary::absorbing);
-	
-	int ghostNum = ix;
-	eToE(2, eIndex) = faceOffsets(2)+ghostNum;
-	mpibeToE(ghostNum, 2) = eIndex;
+	if (!periodic) {
+	  // Apply absorbing boundary condition at -y boundary
+	  eToE(2, eIndex) = static_cast<int>(Boundary::absorbing);
+	}
+	else {
+	  int ghostNum = ix;
+	  eToE(2, eIndex) = faceOffsets(2)+ghostNum;
+	  mpibeToE(ghostNum, 2) = eIndex;
+	}
       }
       else {
 	eToE(2, eIndex) = ix0+iyM;
       }
       
       if (face3) {
-	// Apply free-surface boundary condition at +y boundary
-	//eToE(3, eIndex) = static_cast<int>(Boundary::free);
-	
-	int ghostNum = ix;
-	eToE(3, eIndex) = faceOffsets(3)+ghostNum;
-	mpibeToE(ghostNum, 3) = eIndex;
+	if (!periodic) {
+	  // Apply free-surface boundary condition at +y boundary
+	  eToE(3, eIndex) = static_cast<int>(Boundary::free);
+	}
+	else {
+	  int ghostNum = ix;
+	  eToE(3, eIndex) = faceOffsets(3)+ghostNum;
+	  mpibeToE(ghostNum, 3) = eIndex;
+	}
       }
       else {
 	eToE(3, eIndex) = ix0+iyP;
@@ -382,6 +406,9 @@ void Mesh::defaultSquare(int nx, int ny) {
 
 /** Copy constructor */
 Mesh::Mesh(const Mesh& other) :
+  vpFile{other.vpFile},
+  vsFile{other.vsFile},
+  rhoFile{other.rhoFile},
   mpi{other.mpi},
   nElements{other.nElements},
   nIElements{other.nIElements},
