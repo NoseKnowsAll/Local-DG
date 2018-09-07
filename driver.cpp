@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Initializing mesh..." << std::endl;
   }
   
-  std::string mshFile{"/global/homes/f/frms4q/repos/Summer2017/Local-DG/input/square.msh"};
+  std::string mshFile{"/home/mfranco/repos/Local-DG/input/square.msh"};
   // TODO: readProps() not yet implemented!
   std::string vpFile{""};
   std::string vsFile{""};

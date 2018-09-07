@@ -1,5 +1,5 @@
-CC = mpiicpc
-#mpic++
+CC = mpic++
+#mpiicpc
 DEBUG :=
 
 
@@ -24,10 +24,10 @@ else
  LAPACK = -llapacke -llapack -lblas -lm
  LIBS    = ${LAPACK}
  INCLUDE = -I. -I/usr/include/ -I/home/mfranco/Lapack/lapack-3.7.0/LAPACKE/include
- LIBES   = -L. -L/usr/lib/ -L/usr/lib/libblas/ -L/home/mfranco/Lapack/lapack-3.7.0/
+ LIBES   = -L. -L/usr/lib/ -L/usr/lib/x86_64-linux-gnu/ -L/home/mfranco/Lapack/lapack-3.7.0/
 
- CFLAGS  = -O3 -std=c++11 ${DEBUG_FLAGS}
- LFLAGS  = -O3 -std=c++11 ${DEBUG_FLAGS}
+ CFLAGS  = -O3 -std=c++11 -no-pie ${DEBUG_FLAGS}
+ LFLAGS  = -O3 -std=c++11 -no-pie ${DEBUG_FLAGS}
 endif
 
 
